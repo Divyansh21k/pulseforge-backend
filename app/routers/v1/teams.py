@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.team import TeamCreate
+from app.schemas.team import TeamCreate, TeamAutoFormRequest
 from app.repositories.team_repository import TeamRepository
 from app.services.team_composition import TeamCompositionService
 
@@ -57,3 +57,16 @@ def get_team_composition(team_id: int, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return result
+
+
+@router.post("/auto-form")
+def auto_form_teams(payload: TeamAutoFormRequest, db: Session = Depends(get_db)):
+    from app.services.team_formation import TeamFormationService
+
+    service = TeamFormationService(db)
+    try:
+        teams = service.form_teams(team_size=payload.team_size)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"teams_formed": len(teams), "teams": teams}
+

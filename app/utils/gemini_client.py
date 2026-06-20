@@ -103,3 +103,24 @@ def extract_skills(raw_text: str) -> list[str]:
     except Exception:
         logger.warning("Gemini skill extraction failed; using fallback extractor.", exc_info=True)
         return _fallback_extract(raw_text)
+TEAM_RATIONALE_PROMPT = """You are an assistant explaining hackathon team compositions to organizers.
+Given the skill categories a team covers and the categories it's missing, write ONE concise sentence
+(max 25 words) describing the team's strength and its main gap. Be specific and natural, not generic.
+
+Categories covered: {covered}
+Categories missing: {gaps}
+
+Output ONLY the sentence, no preamble."""
+
+
+def generate_team_rationale(covered: list[str], gaps: list[str]) -> str:
+    try:
+        prompt = TEAM_RATIONALE_PROMPT.format(
+            covered=", ".join(covered) if covered else "none",
+            gaps=", ".join(gaps) if gaps else "none",
+        )
+        response = _model.generate_content(prompt)
+        text = response.text.strip()
+        return text if text else "Team formed based on available skill complementarity."
+    except Exception:
+        return "Team formed based on available skill complementarity."

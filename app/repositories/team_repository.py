@@ -26,3 +26,8 @@ class TeamRepository:
 
     def list_all(self) -> List[Team]:
         return self.db.query(Team).all()
+
+
+    def get_assigned_participant_ids(self):
+        rows = self.db.query(TeamMember.participant_id).distinct().all()
+        return {row[0] for row in rows}
