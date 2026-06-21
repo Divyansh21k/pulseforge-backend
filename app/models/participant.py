@@ -15,7 +15,8 @@ class Participant(Base):
     phone = Column(String, nullable=True)
     organization = Column(String, nullable=True)
     raw_skills_text = Column(String, nullable=True)
-    role = Column(String, default="participant")  # participant | reviewer | admin
+    role = Column(String, default="participant")  
+    hashed_password = Column(String, nullable=True)  # set only via /api/auth/register # participant | reviewer | admin
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Demographic fields are used ONLY in aggregate, statistical bias-detection
