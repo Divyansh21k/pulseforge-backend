@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr
 
 class RegisterRequest(BaseModel):
-    name: str
+    full_name: str
     email: EmailStr
     password: str
     organization: str | None = None
@@ -16,3 +16,4 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: str
     participant_id: int
+

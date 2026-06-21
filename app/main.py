@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import Base, engine
 from app import models
 from app.models import communication
-from app.routers.v1 import participants, duplicates, skills, teams, projects, reviewers, evaluations, results, analytics
+from app.routers.v1 import participants, duplicates, skills, teams, events, projects, reviewers, evaluations, results, analytics
 from app.routers.v1 import auth as auth_router
 from app.routers.v1 import communications as communications_router
 
@@ -17,6 +17,7 @@ app.include_router(participants.router)
 app.include_router(duplicates.router)
 app.include_router(skills.router)
 app.include_router(teams.router)
+app.include_router(events.router)
 app.include_router(projects.router)
 app.include_router(reviewers.router)
 app.include_router(evaluations.router)
@@ -27,3 +28,4 @@ app.include_router(communications_router.router)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "pulseforge-backend"}
+
