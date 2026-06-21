@@ -6,7 +6,7 @@ from app.models import communication
 from app.routers.v1 import participants, duplicates, skills, teams, projects, reviewers, evaluations, results, analytics
 from app.routers.v1 import auth as auth_router
 from app.routers.v1 import communications as communications_router
-
+from app.routers.v1 import bias_stream as bias_stream_router
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="PulseForge", version="1.0.0", description="AI-powered Hackathon Management Platform")
@@ -23,7 +23,7 @@ app.include_router(evaluations.router)
 app.include_router(results.router)
 app.include_router(analytics.router)
 app.include_router(communications_router.router)
-
+app.include_router(bias_stream_router.router)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "pulseforge-backend"}
