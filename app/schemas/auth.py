@@ -10,6 +10,7 @@ class RegisterRequest(BaseModel):
     raw_skills_text: str | None = None
     expertise_text: str | None = None
     max_workload: int | None = None
+    linkedin_url: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -31,3 +32,4 @@ class UserProfile(BaseModel):
     role: str
     organization: str | None = None
     reviewer_id: int | None = None
+    reviewer_status: str | None = None

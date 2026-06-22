@@ -8,6 +8,7 @@ export interface AuthUser {
   role: 'organizer' | 'reviewer' | 'participant';
   organization?: string | null;
   reviewer_id?: number | null;
+  reviewer_status?: string | null;
 }
 
 export function getToken(): string | null {

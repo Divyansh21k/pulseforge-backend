@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as api from '../utils/api';
-import { RefreshCw, Users, ShieldAlert, Send, Award } from 'lucide-react';
+import { RefreshCw, Users, ShieldAlert, Send, Award, CheckCircle } from 'lucide-react';
 
 interface Props {
   onAudit: (action: string, actor: string, detail: string, category: string) => void;
@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function OrganizerPanels({ onAudit, onRefresh }: Props) {
-  const [tab, setTab] = useState<'teams' | 'matcher' | 'bias' | 'promo'>('teams');
+  const [tab, setTab] = useState<'teams' | 'matcher' | 'bias' | 'promo' | 'jury'>('teams');
   const [teamSize, setTeamSize] = useState(2);
   const [teamResult, setTeamResult] = useState<string>('');
   const [composition, setComposition] = useState<api.BackendTeamComposition | null>(null);
@@ -20,10 +20,16 @@ export default function OrganizerPanels({ onAudit, onRefresh }: Props) {
   const [promoTemplate, setPromoTemplate] = useState('submission_reminder');
   const [promoParticipantId, setPromoParticipantId] = useState('1');
   const [loading, setLoading] = useState(false);
+  const [reviewers, setReviewers] = useState<api.BackendReviewer[]>([]);
 
   const loadTeams = async () => {
     const t = await api.listTeams();
     setTeams(t);
+  };
+
+  const loadReviewers = async () => {
+    const r = await api.listReviewers();
+    setReviewers(r);
   };
 
   const loadWorkloads = async () => {
@@ -103,10 +109,23 @@ export default function OrganizerPanels({ onAudit, onRefresh }: Props) {
     setLoading(false);
   };
 
+  const handleApproveJury = async (id: number) => {
+    setLoading(true);
+    try {
+      await api.approveReviewer(id, 'approved');
+      onAudit('Jury Approved', 'Organizer', `Reviewer #${id} approved for evaluation workspace.`, 'Registration');
+      await loadReviewers();
+    } catch (e: unknown) {
+      onAudit('Jury Approval Failed', 'Organizer', String(e), 'Registration');
+    }
+    setLoading(false);
+  };
+
   React.useEffect(() => {
     if (tab === 'teams') loadTeams();
     if (tab === 'matcher') loadWorkloads();
     if (tab === 'bias') loadBias();
+    if (tab === 'jury') loadReviewers();
   }, [tab]);
 
   const tabs = [
@@ -114,6 +133,7 @@ export default function OrganizerPanels({ onAudit, onRefresh }: Props) {
     { id: 'matcher' as const, label: 'Reviewer Matcher', icon: Award },
     { id: 'bias' as const, label: 'Bias Dashboard', icon: ShieldAlert },
     { id: 'promo' as const, label: 'Communications', icon: Send },
+    { id: 'jury' as const, label: 'Jury Approvals', icon: CheckCircle },
   ];
 
   return (
@@ -147,9 +167,9 @@ export default function OrganizerPanels({ onAudit, onRefresh }: Props) {
           {teamResult && <p className="text-xs text-slate-700 bg-[#F5F2EB] p-3 rounded border border-[#DFD7C7]">{teamResult}</p>}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {teams.map(t => (
-              <button key={t.id} onClick={() => handleComposition(t.id)} className={`p-3 border rounded text-left text-xs cursor-pointer ${selectedTeamId === t.id ? 'border-[#0076ce] bg-blue-50' : 'border-slate-200'}`}>
-                <strong>{t.name}</strong>
-                <span className="block text-slate-500 mt-1">{t.member_count} members</span>
+              <button key={t.id} onClick={() => handleComposition(t.id)} className={`p-3 border rounded text-left text-xs cursor-pointer hover:-translate-y-1 hover:shadow-md transition-all duration-300 ${selectedTeamId === t.id ? 'border-[#0076ce] bg-blue-50 shadow-sm' : 'border-slate-200 bg-white'}`}>
+                <strong className="text-slate-800">{t.name}</strong>
+                <span className="block text-slate-500 mt-1 font-mono">{t.member_count} members</span>
               </button>
             ))}
           </div>
@@ -230,6 +250,63 @@ export default function OrganizerPanels({ onAudit, onRefresh }: Props) {
           <button onClick={handlePromo} disabled={loading} className="px-4 py-1.5 bg-[#0B1E36] text-white text-xs font-bold rounded cursor-pointer">
             Send Notification
           </button>
+        </div>
+      )}
+
+      {tab === 'jury' && (
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">Review and approve registered Jury members by verifying their credentials and LinkedIn profile.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">Pending Verification</span>
+              {reviewers.filter(r => r.status === 'pending').map(r => (
+                <div key={r.id} className="p-4 border border-amber-200 bg-amber-50 rounded shadow-sm hover:shadow transition-shadow">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <strong className="text-slate-800 block text-sm">{r.full_name}</strong>
+                      <span className="text-slate-500 text-xs">{r.organization}</span>
+                    </div>
+                    <button
+                      onClick={() => handleApproveJury(r.id)}
+                      disabled={loading}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded cursor-pointer transition-colors"
+                    >
+                      Approve
+                    </button>
+                  </div>
+                  <div className="space-y-1 mt-3">
+                    <p className="text-xs text-slate-600"><strong>Expertise:</strong> {r.expertise_text}</p>
+                    {r.linkedin_url && (
+                      <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-xs text-[#0076ce] hover:underline font-bold inline-flex items-center gap-1">
+                        View LinkedIn Profile ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {reviewers.filter(r => r.status === 'pending').length === 0 && (
+                <p className="text-xs text-slate-400 italic">No pending requests.</p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">Approved Jury</span>
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                {reviewers.filter(r => r.status === 'approved').map(r => (
+                  <div key={r.id} className="p-3 border border-emerald-100 bg-white rounded flex justify-between items-center">
+                    <div>
+                      <strong className="text-slate-800 text-xs block">{r.full_name}</strong>
+                      <span className="text-slate-500 text-[10px]">{r.organization}</span>
+                    </div>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-bold text-[9px] rounded-full uppercase">Approved</span>
+                  </div>
+                ))}
+                {reviewers.filter(r => r.status === 'approved').length === 0 && (
+                  <p className="text-xs text-slate-400 italic">No approved jury members.</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

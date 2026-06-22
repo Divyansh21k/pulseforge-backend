@@ -105,7 +105,7 @@ class ReviewerAssignmentService:
         doesn't already have assignments, using greedy multi-objective
         scoring. Returns the full breakdown for transparency/audit."""
         projects = self.project_repo.list_all()
-        reviewers = self.reviewer_repo.list_all()
+        reviewers = [r for r in self.reviewer_repo.list_all() if r.status == "approved"]
 
         if not reviewers:
             raise ValueError("No reviewers available to assign")
@@ -192,7 +192,7 @@ class ReviewerAssignmentService:
         target.status = "reassigned"
         self.db.commit()
 
-        reviewers = [r for r in self.reviewer_repo.list_all() if r.id not in already_assigned_ids]
+        reviewers = [r for r in self.reviewer_repo.list_all() if r.id not in already_assigned_ids and r.status == "approved"]
         current_load = {
             r.id: self.assignment_repo.count_active_for_reviewer(r.id) for r in reviewers
         }

@@ -21,6 +21,8 @@ class Reviewer(Base):
     organization = Column(String, nullable=True)  # used for conflict-of-interest detection
     expertise_text = Column(Text, nullable=True)  # raw free text, e.g. "ML, computer vision, react"
     max_workload = Column(Integer, default=5)  # max projects this reviewer can take
+    linkedin_url = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending | approved | rejected
     created_at = Column(DateTime, default=datetime.utcnow)
 
     expertise_tags = relationship("ReviewerExpertise", back_populates="reviewer")

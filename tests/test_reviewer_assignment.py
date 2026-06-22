@@ -18,11 +18,13 @@ def test_reviewer_with_same_org_excluded_from_assignment(client, organizer_heade
         json={"full_name": "Conflicted Rev", "email": "conf@x.com", "organization": "VIT University", "expertise_text": "python"},
         headers=organizer_headers,
     ).json()
+    client.patch(f"/api/reviewers/{conflicted['id']}/status", json={"status": "approved"}, headers=organizer_headers)
     clean = client.post(
         "/api/reviewers/",
         json={"full_name": "Clean Rev", "email": "clean@x.com", "organization": "MIT", "expertise_text": "python, react"},
         headers=organizer_headers,
     ).json()
+    client.patch(f"/api/reviewers/{clean['id']}/status", json={"status": "approved"}, headers=organizer_headers)
 
     r = client.post("/api/reviewers/assign", json={"reviewers_per_project": 2}, headers=organizer_headers)
     assert r.status_code == 200
@@ -41,11 +43,12 @@ def test_assignment_fails_gracefully_with_no_reviewers(client, organizer_headers
 
 def test_assignment_score_breakdown_present(client, organizer_headers):
     team, project = _setup_team_and_project(client, organizer_headers, org="Org A")
-    client.post(
+    rev = client.post(
         "/api/reviewers/",
         json={"full_name": "Rev", "email": "rev@x.com", "organization": "Org B", "expertise_text": "python, react"},
         headers=organizer_headers,
-    )
+    ).json()
+    client.patch(f"/api/reviewers/{rev['id']}/status", json={"status": "approved"}, headers=organizer_headers)
     r = client.post("/api/reviewers/assign", json={"reviewers_per_project": 1}, headers=organizer_headers)
     assert r.status_code == 200
     a = r.json()["assignments"][0]

@@ -6,7 +6,9 @@ def _setup_project_and_reviewers(client, organizer_headers):
         headers=organizer_headers,
     ).json()
     rev1 = client.post("/api/reviewers/", json={"full_name": "R1", "email": "r1@x.com"}, headers=organizer_headers).json()
+    client.patch(f"/api/reviewers/{rev1['id']}/status", json={"status": "approved"}, headers=organizer_headers)
     rev2 = client.post("/api/reviewers/", json={"full_name": "R2", "email": "r2@x.com"}, headers=organizer_headers).json()
+    client.patch(f"/api/reviewers/{rev2['id']}/status", json={"status": "approved"}, headers=organizer_headers)
     return project, rev1, rev2
 
 
@@ -58,6 +60,7 @@ def test_bias_scan_runs_without_error_on_small_dataset(client, organizer_headers
 
 def test_evaluation_for_missing_project_404s(client, organizer_headers):
     rev1 = client.post("/api/reviewers/", json={"full_name": "R", "email": "r@x.com"}, headers=organizer_headers).json()
+    client.patch(f"/api/reviewers/{rev1['id']}/status", json={"status": "approved"}, headers=organizer_headers)
     r = client.post("/api/evaluations/", json={
         "project_id": 9999, "reviewer_id": rev1["id"],
         "innovation_score": 5, "technical_score": 5, "impact_score": 5, "presentation_score": 5,

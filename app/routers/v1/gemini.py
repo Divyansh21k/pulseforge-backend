@@ -25,13 +25,13 @@ class PitchPayload(BaseModel):
 def analyze_dell_potential(payload: AnalyzePayload):
     if not _model:
         return {
-            "feedback": "### ⚠️ Local AI Emulation Mode Active\n\nTo test live Gemini generations, ensure you populate the **GEMINI_API_KEY**.\n\n#### **Pre-Evaluation Metrics (Emulated Baseline)**\n- **WIN PROBABILITY: 85%**\n- **Architecture alignment**: Your general outline matches key trends.\n- **Critical Recommendation**: To lock in first place, explicit hardware deployment diagrams highlighting **Dell PowerEdge XE9680** clusters mapping real-time sensor streams and local **Dell APEX Hybrid Workloads** must be mentioned.\n- **Green Computing Advice**: Map carbon offsets dynamically via lightweight database telemetry sensors."
+            "feedback": "### ⚠️ Local AI Emulation Mode Active\n\nTo test live Gemini generations, ensure you populate the **GEMINI_API_KEY**.\n\n#### **Pre-Evaluation Metrics (Emulated Baseline)**\n- **WIN PROBABILITY: 85%**\n- **Architecture alignment**: Your general outline matches key trends.\n- **Critical Recommendation**: To lock in first place, explicit architecture deployment diagrams highlighting **Enterprise Cloud** clusters mapping real-time sensor streams and local **Hybrid Workloads** must be mentioned.\n- **Green Computing Advice**: Map carbon offsets dynamically via lightweight database telemetry sensors."
         }
 
-    prompt = f"""You are a Senior Executive Distringuished Engineer and Principal Hackathon Juror at Dell Technologies.
-Your goal is to evaluate candidate hackathon proposals and check if they have what it takes to win a prestigious Dell Global Hackathon competition.
+    prompt = f"""You are a Senior Executive Distinguished Engineer and Principal Hackathon Juror.
+Your goal is to evaluate candidate hackathon proposals and check if they have what it takes to win a prestigious Global Hackathon competition.
 Analyze this candidate project under the four main pillars of the evaluation framework:
-1. DEPLOYMENT SCALABILITY & VIRTUALIZATION (Using Dell PowerEdge servers, client virtualization platforms, unified enterprise platforms)
+1. DEPLOYMENT SCALABILITY & VIRTUALIZATION (Using enterprise-grade servers, client virtualization platforms, unified enterprise platforms)
 2. GREENOPS & POWER TELEMETRY (Carbon tracking, CPU cooling strategies, data center thermal optimizations)
 3. ZERO-TRUST RESILIENCE (Edge security, endpoint identity, adversarial compliance models)
 4. PRACTICAL EDGE AI COUPLING (軽量 lightweight local inference model integration, latency-optimized calculations)
@@ -43,12 +43,12 @@ Detailed System Description: {payload.description or "No description provided."}
 Tech Stack Components: {payload.techStack or "Standard frontend/backend stack"}
 
 Provide a highly professional markdown feedback report structured as follows:
-- **Dell Hackathon Win Probability Score**: Assign a percentage (0-100%) based on rigor and design.
+- **Hackathon Win Probability Score**: Assign a percentage (0-100%) based on rigor and design.
 - **Technical Excellence Breakdown**: 2 concise bullet points for each of the 4 pillars.
-- **Specific Dell Hardware / System Suggestion**: Describe how they can realistically leverage Dell products (Dell Precision Workstations, PowerEdge servers, APEX multi-cloud, PowerScale storage) to pitch a world-class hybrid cloud architectural blueprint.
+- **Specific Enterprise Hardware / System Suggestion**: Describe how they can realistically leverage enterprise products (Workstations, Cloud servers, multi-cloud, scalable storage) to pitch a world-class hybrid cloud architectural blueprint.
 - **3 Urgent Technical Implementations**: Actionable, precise software/hardware improvements to execute immediately to guarantee first place.
 
-Keep the advice clinical, highly expert, authentic to modern Dell enterprise tech, encouraging, and detailed. DO NOT use generic AI filler words. Use exact terms."""
+Keep the advice clinical, highly expert, authentic to modern enterprise tech, encouraging, and detailed. DO NOT use generic AI filler words. Use exact terms."""
 
     try:
         response = _model.generate_content(prompt)
@@ -61,7 +61,7 @@ Keep the advice clinical, highly expert, authentic to modern Dell enterprise tec
 def generate_pitch(payload: PitchPayload):
     if not _model:
         return {
-            "script": "## 🎙️ Emulated Elevator Pitch & Cue Card\n\n**[00:00 - 00:15] Open with a visual punch**\n- *Visual*: Stand tall, screen shared with an elegant flow diagram of telemetry streams. \n- *Audio*: Hello, judges! We created a dynamic workspace resolving the core operational bottlenecks of enterprise telemetry.\n\n**[00:15 - 00:45] The Technical Deep-dive**\n- *Visual*: Switch to the Live Dashboard highlighting z-score normalized evaluations and secure endpoint routes.\n- *Audio*: Running on local edge instances, our solution couples low-latency inference loops with real-time analytics, scaling securely across enterprise servers.\n\n**[00:45 - 01:00] The Ask & Integration**\n- *Visual*: Show the Dell APEX workflow integration slide.\n- *Audio*: By bridging the gaps between co-founder capabilities and expert jury allocations, we guarantee 100% operational fairness. That is how we power edge workspaces with Dell! Thank you."
+            "script": "## 🎙️ Emulated Elevator Pitch & Cue Card\n\n**[00:00 - 00:15] Open with a visual punch**\n- *Visual*: Stand tall, screen shared with an elegant flow diagram of telemetry streams. \n- *Audio*: Hello, judges! We created a dynamic workspace resolving the core operational bottlenecks of enterprise telemetry.\n\n**[00:15 - 00:45] The Technical Deep-dive**\n- *Visual*: Switch to the Live Dashboard highlighting z-score normalized evaluations and secure endpoint routes.\n- *Audio*: Running on local edge instances, our solution couples low-latency inference loops with real-time analytics, scaling securely across enterprise servers.\n\n**[00:45 - 01:00] The Ask & Integration**\n- *Visual*: Show the Cloud workflow integration slide.\n- *Audio*: By bridging the gaps between co-founder capabilities and expert jury allocations, we guarantee 100% operational fairness. That is how we power edge workspaces! Thank you."
         }
 
     prompt = f"""Write a high-impact, professional 60-second video elevator pitch or live demonstration script for the following competitor hackathon project.
@@ -76,7 +76,7 @@ Tech Stack: {payload.techStack}
 Please format the response as a professional cue performance sheet containing:
 - [Visual / Slide Cue] notation telling them what they should display on screen.
 - [Spoken script] text containing the highly precise words they should execute under exact time allocations ([00:00-00:15], [00:15-00:45], [00:45-01:00]).
-Include professional hooks emphasizing scaling parameters, business metrics, and structural integration with Dell enterprise technology."""
+Include professional hooks emphasizing scaling parameters, business metrics, and structural integration with modern enterprise technology."""
 
     try:
         response = _model.generate_content(prompt)

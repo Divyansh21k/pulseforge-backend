@@ -38,7 +38,9 @@ def test_reassign_no_show_replaces_reviewer(client, organizer_headers):
     project = client.post("/api/projects/", json={"team_id": team["id"], "title": "P", "description": "d"}, headers=organizer_headers).json()
 
     rev1 = client.post("/api/reviewers/", json={"full_name": "R1", "email": "r1@x.com", "expertise_text": "python"}, headers=organizer_headers).json()
+    client.patch(f"/api/reviewers/{rev1['id']}/status", json={"status": "approved"}, headers=organizer_headers)
     rev2 = client.post("/api/reviewers/", json={"full_name": "R2", "email": "r2@x.com", "expertise_text": "python"}, headers=organizer_headers).json()
+    client.patch(f"/api/reviewers/{rev2['id']}/status", json={"status": "approved"}, headers=organizer_headers)
 
     client.post("/api/reviewers/assign", json={"reviewers_per_project": 1}, headers=organizer_headers)
     assignments = client.get(f"/api/reviewers/assignments/{project['id']}", headers=organizer_headers).json()

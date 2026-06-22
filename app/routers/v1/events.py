@@ -67,3 +67,35 @@ def get_event(
         "status": event.status,
         "created_at": event.created_at,
     }
+
+
+@router.post("/{event_id}/enroll")
+def enroll_in_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
+    repo = EventRepository(db)
+    event = repo.get_by_id(event_id)
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    
+    enrollment = repo.enroll_participant(event_id, current_user.id)
+    return {
+        "event_id": enrollment.event_id,
+        "participant_id": enrollment.participant_id,
+        "enrolled_at": enrollment.enrolled_at,
+    }
+
+
+@router.get("/enrolled/me")
+def get_enrolled_events(
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
+    repo = EventRepository(db)
+    events = repo.get_enrolled_events(current_user.id)
+    return [
+        {"id": e.id, "name": e.name, "theme": e.theme, "status": e.status}
+        for e in events
+    ]

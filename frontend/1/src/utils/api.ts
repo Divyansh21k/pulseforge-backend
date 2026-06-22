@@ -105,13 +105,14 @@ export async function register(payload: {
   email: string;
   password: string;
   organization?: string;
-  role: 'participant' | 'reviewer';
+  role: 'participant' | 'reviewer' | 'organizer';
   raw_skills_text?: string;
   expertise_text?: string;
+  linkedinUrl?: string;
 }): Promise<AuthUser> {
   const data = await apiFetch<TokenResponse>('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, linkedin_url: payload.linkedinUrl }),
   }, false);
   setToken(data.access_token);
   const profile = await getMe();
@@ -159,6 +160,14 @@ export async function createEvent(payload: {
   theme?: string;
 }): Promise<BackendEvent & { organizer_id: number }> {
   return apiFetch('api/events/', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function enrollInEvent(eventId: number | string): Promise<{ event_id: number; participant_id: number; enrolled_at: string }> {
+  return apiFetch(`api/events/${toBackendId(eventId)}/enroll`, { method: 'POST' });
+}
+
+export async function getEnrolledEvents(): Promise<BackendEvent[]> {
+  return apiFetch('api/events/enrolled/me', { method: 'GET' });
 }
 
 /* ── Participants ── */
@@ -388,6 +397,8 @@ export interface BackendReviewer {
   expertise_text: string;
   max_workload: number;
   participant_id: number | null;
+  linkedin_url?: string;
+  status: string;
 }
 
 export interface BackendReviewerWorkload {
@@ -413,6 +424,13 @@ export async function listReviewers(): Promise<BackendReviewer[]> {
 
 export async function getReviewerWorkload(reviewerId: string | number): Promise<BackendReviewerWorkload> {
   return apiFetch(`api/reviewers/${toBackendId(reviewerId)}/workload`, { method: 'GET' });
+}
+
+export async function approveReviewer(reviewerId: string | number, status: string): Promise<BackendReviewer> {
+  return apiFetch(`api/reviewers/${toBackendId(reviewerId)}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
 }
 
 export async function runReviewerAssignments(reviewersPerProject: number): Promise<{ assignments_created: number; assignments: unknown[] }> {

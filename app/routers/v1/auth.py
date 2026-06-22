@@ -51,6 +51,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
                 expertise_text=payload.expertise_text or payload.raw_skills_text,
                 max_workload=payload.max_workload or 5,
                 participant_id=user.id,
+                linkedin_url=payload.linkedin_url,
             )
         except ValueError:
             pass
@@ -69,10 +70,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserProfile)
 def me(current_user: Participant = Depends(get_current_user), db: Session = Depends(get_db)):
     reviewer_id = None
+    reviewer_status = None
     if current_user.role == "reviewer":
         reviewer = ReviewerRepository(db).get_by_email(current_user.email)
         if reviewer:
             reviewer_id = reviewer.id
+            reviewer_status = reviewer.status
 
     return UserProfile(
         id=current_user.id,
@@ -81,4 +84,5 @@ def me(current_user: Participant = Depends(get_current_user), db: Session = Depe
         role=normalize_role(current_user.role),
         organization=current_user.organization,
         reviewer_id=reviewer_id,
+        reviewer_status=reviewer_status,
     )

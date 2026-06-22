@@ -11,6 +11,7 @@ class ReviewerCreate(BaseModel):
     expertise_text: Optional[str] = None
     max_workload: int = 5
     participant_id: Optional[int] = None
+    linkedin_url: Optional[str] = None
 
 
 class ReviewerOut(BaseModel):
@@ -20,6 +21,8 @@ class ReviewerOut(BaseModel):
     organization: Optional[str] = None
     expertise_text: Optional[str] = None
     max_workload: int
+    linkedin_url: Optional[str] = None
+    status: str
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

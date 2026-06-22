@@ -1,6 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -29,6 +30,7 @@ def register_reviewer(
             expertise_text=payload.expertise_text,
             max_workload=payload.max_workload,
             participant_id=payload.participant_id,
+            linkedin_url=payload.linkedin_url,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -54,6 +56,25 @@ def get_reviewer(
     reviewer = repo.get_by_id(reviewer_id)
     if not reviewer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reviewer not found")
+    return reviewer
+
+
+class StatusUpdateRequest(BaseModel):
+    status: str
+
+
+@router.patch("/{reviewer_id}/status", response_model=ReviewerOut)
+def update_reviewer_status(
+    reviewer_id: int,
+    payload: StatusUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(require_organizer),
+):
+    service = ReviewerService(db)
+    try:
+        reviewer = service.update_reviewer_status(reviewer_id, payload.status)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return reviewer
 
 

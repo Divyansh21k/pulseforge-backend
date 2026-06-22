@@ -92,9 +92,9 @@ def run():
 
     print("Creating demo auth accounts...")
     demo_users = [
-        ("Demo Organizer", "organizer@pulseforge.dev", "organizer", "PulseForge HQ"),
-        ("Demo Reviewer", "reviewer@pulseforge.dev", "reviewer", "MIT"),
-        ("Demo Participant", "participant@pulseforge.dev", "participant", "Stanford"),
+        ("Alexander Vance", "organizer@pulseforge.dev", "organizer", "PulseForge HQ"),
+        ("Dr. Marcus Chen", "reviewer@pulseforge.dev", "reviewer", "MIT"),
+        ("Elena Rostova", "participant@pulseforge.dev", "participant", "Stanford"),
     ]
     for name, email, role, org in demo_users:
         if not p_repo.get_by_email(email):
@@ -104,11 +104,13 @@ def run():
             db.commit()
             if role == "reviewer":
                 try:
-                    rev_service.create_reviewer(
+                    rev = rev_service.create_reviewer(
                         name, email, organization=org,
                         expertise_text="machine learning, python, data science",
                         max_workload=4, participant_id=user.id,
                     )
+                    db.query(models.Reviewer).filter(models.Reviewer.id == rev.id).update({"status": "approved"})
+                    db.commit()
                 except ValueError:
                     pass
     print("  demo login: organizer@pulseforge.dev / demo1234 (organizer)")
@@ -156,6 +158,8 @@ def run():
         email = f"{name.split()[-1].lower()}@reviewers.dev"
         try:
             rev = rev_service.create_reviewer(name, email, organization=org, expertise_text=expertise, max_workload=4)
+            db.query(models.Reviewer).filter(models.Reviewer.id == rev.id).update({"status": "approved"})
+            db.commit()
             reviewers.append(rev)
         except ValueError:
             pass  # already exists, skip on re-seed

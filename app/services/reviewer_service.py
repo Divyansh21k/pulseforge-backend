@@ -22,6 +22,7 @@ class ReviewerService:
         expertise_text: Optional[str] = None,
         max_workload: int = 5,
         participant_id: Optional[int] = None,
+        linkedin_url: Optional[str] = None,
     ) -> Reviewer:
         existing = self.reviewer_repo.get_by_email(email)
         if existing:
@@ -34,6 +35,7 @@ class ReviewerService:
             expertise_text=expertise_text,
             max_workload=max_workload,
             participant_id=participant_id,
+            linkedin_url=linkedin_url,
         )
 
         if expertise_text:
@@ -42,4 +44,10 @@ class ReviewerService:
                 skill = self.skill_repo.get_or_create(tag)
                 self.reviewer_repo.add_expertise(reviewer.id, skill.id)
 
+        return reviewer
+
+    def update_reviewer_status(self, reviewer_id: int, status: str) -> Reviewer:
+        reviewer = self.reviewer_repo.update_status(reviewer_id, status)
+        if not reviewer:
+            raise ValueError(f"Reviewer {reviewer_id} not found.")
         return reviewer

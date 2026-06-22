@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import CreatableSelect from 'react-select/creatable';
 import * as api from './utils/api';
 import * as auth from './utils/auth';
 import OrganizerPanels from './components/OrganizerPanels';
@@ -144,6 +145,7 @@ export default function App() {
   const [auditTrails, setAuditTrails] = useState<AuditTrail[]>([]);
   const [communications, setCommunications] = useState<CommunicationLog[]>([]);
   const [hackathons, setHackathons] = useState<Hackathon[]>(INITIAL_HACKATHONS);
+  const [enrolledHackathons, setEnrolledHackathons] = useState<api.BackendEvent[]>([]);
 
   // New event creator form state
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -162,8 +164,7 @@ export default function App() {
   const [currentReviewerEmail, setCurrentReviewerEmail] = useState<string>('helen.vance@mit.edu');
 
   // Offline Simulator Variables
-  const [isOnline, setIsOnline] = useState<boolean>(true);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
 
   // Sub-tabs for Organizer dashboard: 'analytics' | 'registrations' | 'matcher' | 'bias' | 'promo'
   const [orgTab, setOrgTab] = useState<'analytics' | 'registrations' | 'matcher' | 'bias' | 'promo'>('analytics');
@@ -192,8 +193,11 @@ export default function App() {
   const [authUser, setAuthUser] = useState<auth.AuthUser | null>(() => auth.getStoredUser());
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [signupRole, setSignupRole] = useState<'participant' | 'reviewer'>('participant');
+  const [signupRole, setSignupRole] = useState<'participant' | 'reviewer' | 'organizer'>('participant');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [resultsDeclared, setResultsDeclared] = useState<boolean>(false);
+  const [showGlobalLeaderboard, setShowGlobalLeaderboard] = useState<boolean>(false);
   const [backendWarning, setBackendWarning] = useState<string | null>(null);
   const [liveBiasFlags, setLiveBiasFlags] = useState<api.BackendBiasFlag[]>([]);
   const [projectFeedback, setProjectFeedback] = useState<Record<string, unknown> | null>(null);
@@ -213,6 +217,7 @@ export default function App() {
     experienceLevel: 'Intermediate' as Participant['experienceLevel'],
     // Reviewer specifics
     domainExpertise: 'AI/ML, Backend Networks, Cloud Orchestration',
+    linkedinUrl: '',
     yearsJudging: '4'
   });
 
@@ -462,6 +467,8 @@ export default function App() {
     if (!auth.getToken()) return;
     try {
       const data = await api.syncAllBackendData();
+      const enrolled = await api.getEnrolledEvents().catch(() => []);
+      setEnrolledHackathons(enrolled);
       if (data.participants.length > 0) {
         setParticipants(data.participants.map(bp => ({
           id: api.toFrontendId('p', bp.id),
@@ -531,7 +538,7 @@ export default function App() {
           channel: 'Email' as const,
           subject: n.subject,
           content: n.template_key,
-          sentAt: n.sent_at,
+          timestamp: n.sent_at,
           engagementOpened: true,
           engagementClicked: false,
           abTestSegment: 'A',
@@ -639,7 +646,7 @@ export default function App() {
   // Sync state helper
   const syncStorage = (key: string, data: any) => {
     localStorage.setItem(key, JSON.stringify(data));
-    if (isOnline) {
+    if (backendOnline) {
       setIsSyncing(true);
       setTimeout(() => setIsSyncing(false), 900);
     }
@@ -767,6 +774,7 @@ export default function App() {
         role: signupRole,
         raw_skills_text: techSkills,
         expertise_text: signupRole === 'reviewer' ? domainExpertise : techSkills,
+        linkedinUrl: signupRole === 'reviewer' ? registerForm.linkedinUrl : undefined,
       });
       setAuthUser(user);
       setActiveRole(auth.roleToActiveRole(user.role));
@@ -780,7 +788,7 @@ export default function App() {
       setRegisterForm({
         firstName: '', lastName: '', email: '', organization: '', country: '',
         gender: 'Prefer not to say', personalBio: '', techSkills: '',
-        experienceLevel: 'Intermediate', domainExpertise: '', yearsJudging: '4',
+        experienceLevel: 'Intermediate', domainExpertise: '', linkedinUrl: '', yearsJudging: '4',
       });
       setLoginPassword('');
     } catch (err) {
@@ -788,12 +796,12 @@ export default function App() {
     }
   };
 
-  const handleSystemLogout = () => {
+  const handleSystemLogout = async () => {
+    await writeAuditRecord('Secure user logout', 'Identity Guard', 'JWT cleared from client storage', 'Registration');
     api.logout();
     setAuthUser(null);
     setActiveRole('login');
     setSelectedProjectId('proj-1');
-    writeAuditRecord('Secure user logout', 'Identity Guard', 'JWT cleared from client storage', 'Registration');
   };
 
   // DYNAMIC PARTICIPANT PROJECT SUBMISSION
@@ -1303,7 +1311,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-chess-pattern-subtle text-[#0B1E36] font-sans flex flex-col antialiased selection:bg-[#0B1E36]/10 relative">
       <AmbientBackgroundDecoration />
-      <NetworkMeshCanvas />
+
+      {resultsDeclared && activeRole !== 'login' && (
+        <div className="bg-amber-500 text-amber-950 px-4 py-2.5 text-center text-xs font-bold flex flex-wrap justify-center items-center gap-4 z-[45] relative shadow-md">
+          <span className="flex items-center gap-2">🏆 HACKATHON JUDGING IS COMPLETE! The final results have been declared.</span>
+          <button 
+            onClick={() => setShowGlobalLeaderboard(true)}
+            className="bg-amber-950 text-amber-50 px-4 py-1.5 rounded uppercase tracking-widest text-[10px] hover:bg-black transition-colors cursor-pointer"
+          >
+            View Official Leaderboard
+          </button>
+        </div>
+      )}
       
 
 
@@ -1562,12 +1581,53 @@ export default function App() {
                         
                         <div className="space-y-1">
                           <label className="text-[10px] font-extrabold text-slate-600 block uppercase tracking-wider">Tech Stack &amp; Key Skills (Comma Separated)</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. React, Python, PyTorch, Docker, PostgreSQL"
-                            value={registerForm.techSkills}
-                            onChange={(e) => setRegisterForm({ ...registerForm, techSkills: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-300 text-xs rounded-sm outline-none bg-white font-mono"
+                          <CreatableSelect
+                            isMulti
+                            value={registerForm.techSkills.split(',').map(s => s.trim()).filter(Boolean).map(s => ({ label: s, value: s }))}
+                            onChange={(newValues: any) => setRegisterForm({ ...registerForm, techSkills: (newValues || []).map((v: any) => v.value).join(', ') })}
+                            options={[
+                              { label: 'React', value: 'React' },
+                              { label: 'Python', value: 'Python' },
+                              { label: 'Machine Learning', value: 'Machine Learning' },
+                              { label: 'TypeScript', value: 'TypeScript' },
+                              { label: 'Node.js', value: 'Node.js' },
+                              { label: 'AWS', value: 'AWS' },
+                              { label: 'Docker', value: 'Docker' },
+                              { label: 'Kubernetes', value: 'Kubernetes' },
+                              { label: 'GraphQL', value: 'GraphQL' },
+                              { label: 'Next.js', value: 'Next.js' },
+                              { label: 'Vue.js', value: 'Vue.js' },
+                              { label: 'Angular', value: 'Angular' },
+                              { label: 'Go', value: 'Go' },
+                              { label: 'Rust', value: 'Rust' },
+                              { label: 'Java', value: 'Java' },
+                              { label: 'Spring Boot', value: 'Spring Boot' },
+                              { label: 'C++', value: 'C++' },
+                              { label: 'C#', value: 'C#' },
+                              { label: 'PostgreSQL', value: 'PostgreSQL' },
+                              { label: 'MongoDB', value: 'MongoDB' },
+                              { label: 'Redis', value: 'Redis' },
+                              { label: 'Tailwind CSS', value: 'Tailwind CSS' },
+                              { label: 'Figma', value: 'Figma' },
+                              { label: 'UI/UX Design', value: 'UI/UX Design' },
+                              { label: 'DevOps', value: 'DevOps' },
+                              { label: 'Cybersecurity', value: 'Cybersecurity' },
+                              { label: 'Blockchain', value: 'Blockchain' },
+                              { label: 'Solidity', value: 'Solidity' },
+                              { label: 'Data Science', value: 'Data Science' },
+                              { label: 'Data Engineering', value: 'Data Engineering' }
+                            ]}
+                            className="text-xs font-mono w-full"
+                            styles={{
+                              control: (baseStyles) => ({
+                                ...baseStyles,
+                                borderColor: '#cbd5e1',
+                                borderRadius: '0.125rem',
+                                minHeight: '34px',
+                                backgroundColor: '#ffffff'
+                              }),
+                            }}
+                            placeholder="Type skills here..."
                           />
                         </div>
 
@@ -1619,12 +1679,50 @@ export default function App() {
                         
                         <div className="space-y-1">
                           <label className="text-[10px] font-extrabold text-slate-600 block uppercase tracking-wider">Disciplinary Expertise (Comma Separated Specialties)</label>
+                          <CreatableSelect
+                            isMulti
+                            value={registerForm.domainExpertise.split(',').map(s => s.trim()).filter(Boolean).map(s => ({ label: s, value: s }))}
+                            onChange={(newValues: any) => setRegisterForm({ ...registerForm, domainExpertise: (newValues || []).map((v: any) => v.value).join(', ') })}
+                            options={[
+                              { label: 'AI/ML', value: 'AI/ML' },
+                              { label: 'Cloud Architecture', value: 'Cloud Architecture' },
+                              { label: 'Pen Testing', value: 'Pen Testing' },
+                              { label: 'UX Design', value: 'UX Design' },
+                              { label: 'Backend Networks', value: 'Backend Networks' },
+                              { label: 'Frontend Development', value: 'Frontend Development' },
+                              { label: 'Cybersecurity', value: 'Cybersecurity' },
+                              { label: 'Blockchain & Web3', value: 'Blockchain & Web3' },
+                              { label: 'Data Science', value: 'Data Science' },
+                              { label: 'DevOps & SRE', value: 'DevOps & SRE' },
+                              { label: 'Mobile App Development', value: 'Mobile App Development' },
+                              { label: 'System Design', value: 'System Design' },
+                              { label: 'Distributed Systems', value: 'Distributed Systems' },
+                              { label: 'Game Development', value: 'Game Development' },
+                              { label: 'IoT & Embedded', value: 'IoT & Embedded' }
+                            ]}
+                            className="text-xs font-mono w-full"
+                            styles={{
+                              control: (baseStyles) => ({
+                                ...baseStyles,
+                                borderColor: '#cbd5e1',
+                                borderRadius: '0.125rem',
+                                minHeight: '34px',
+                                backgroundColor: '#ffffff'
+                              }),
+                            }}
+                            placeholder="Type expertise domains here..."
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold text-[#0076ce] block uppercase tracking-wider">LinkedIn Profile URL (Required for Verification)</label>
                           <input
-                            type="text"
-                            placeholder="e.g. AI/ML, Cloud Architecture, Pen Testing, UX Design"
-                            value={registerForm.domainExpertise}
-                            onChange={(e) => setRegisterForm({ ...registerForm, domainExpertise: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-slate-300 text-xs rounded-sm outline-none bg-white font-mono"
+                            type="url"
+                            required={signupRole === 'reviewer'}
+                            value={registerForm.linkedinUrl}
+                            onChange={(e) => setRegisterForm({ ...registerForm, linkedinUrl: e.target.value })}
+                            className="w-full px-2.5 py-1.5 border border-[#0076ce]/30 bg-[#0076ce]/5 text-xs rounded-sm outline-none focus:border-[#0076ce]"
+                            placeholder="https://linkedin.com/in/yourprofile"
                           />
                         </div>
 
@@ -2049,9 +2147,9 @@ export default function App() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-4 border border-slate-200 rounded bg-white">
               <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block font-mono">Focus Event Scope</span>
-              <strong className="text-slate-900 text-sm block mt-1 truncate">{selectedHackathon.title}</strong>
+              <strong className="text-slate-900 text-sm block mt-1 truncate">{selectedHackathon?.title}</strong>
               <span className="text-[10px] bg-sky-50 text-[#0076ce] border border-sky-200 font-bold px-1.5 py-0.5 rounded-sm inline-block mt-2 uppercase font-mono">
-                {selectedHackathon.status} Frame
+                {selectedHackathon?.status} Frame
               </span>
             </div>
 
@@ -2164,7 +2262,21 @@ export default function App() {
             </div>
 
             {/* COMPARISON RESULTS TABLE */}
-            <span className="text-[11px] font-extrabold text-slate-400 font-mono uppercase block mt-2">Normalized Fairness Rankings comparison</span>
+            <div className="flex justify-between items-center mt-2 mb-2">
+              <span className="text-[11px] font-extrabold text-slate-400 font-mono uppercase block mt-2">Normalized Fairness Rankings comparison</span>
+              {!resultsDeclared ? (
+                <button
+                  onClick={() => setResultsDeclared(true)}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded font-bold text-[10px] uppercase tracking-wider cursor-pointer transition-colors shadow-sm"
+                >
+                  Declare Final Results
+                </button>
+              ) : (
+                <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px] uppercase tracking-wider border border-emerald-200">
+                  Results Published
+                </span>
+              )}
+            </div>
             
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
@@ -2196,7 +2308,7 @@ export default function App() {
                           <span className="font-mono bg-[#0c2340] text-white px-2 py-0.5 rounded-sm font-bold text-xs">#{row.rank}</span>
                         </td>
                         <td className="py-3 px-3 font-extrabold text-[#0c2340] leading-snug">{row.title}</td>
-                        <td className="py-2 px-3 text-slate-500">{selectedHackathon.track}</td>
+                        <td className="py-2 px-3 text-slate-500">{selectedHackathon?.track}</td>
                         <td className="py-2 px-3 text-center font-mono font-bold text-slate-600">{row.raw > 0 ? `${row.raw.toFixed(1)}/10` : '—'}</td>
                         <td className="py-2 px-3 text-center font-mono font-bold text-slate-500">—</td>
                         <td className="py-2 px-3 text-center font-mono font-extrabold bg-[#0076ce]/5 text-[#0076ce]">{row.norm > 0 ? `${row.norm.toFixed(1)}/10` : '—'}</td>
@@ -2218,7 +2330,7 @@ export default function App() {
          ────────────────────────────────────────────────────────── */}
       {activeRole === 'reviewer' && (
         <div className="flex-1 max-w-6xl w-full mx-auto px-4 md:px-8 py-8 space-y-6">
-          <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg flex justify-between items-center flex-wrap gap-4">
+          <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg flex justify-between items-center flex-wrap gap-4 shadow-sm hover:shadow-md transition-shadow duration-300">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 bg-[#0076ce]/10 text-[#0076ce] rounded-sm text-[10px] font-mono font-extrabold uppercase">JURY SEAT</span>
@@ -2227,7 +2339,44 @@ export default function App() {
               <h2 className="text-2xl font-black font-disp tracking-tight">Active Evaluation Workbench</h2>
               <p className="text-xs text-slate-500">Provide impartial scores based on innovation, design, and continuous engineering metrics.</p>
             </div>
+            
+            <div className="p-2 bg-white rounded border border-slate-200 flex flex-col gap-1.5 min-w-[220px] shadow-sm">
+              <span className="text-[9.5px] font-bold text-slate-500 uppercase font-mono px-1">Active Hackathon Event:</span>
+              <select
+                value={selectedHackathonId}
+                onChange={(e) => {
+                  setSelectedHackathonId(e.target.value);
+                  writeAuditRecord('Reviewer changed scoring scope', 'Reviewer', `Mapped workspace to event: ${e.target.value}`, 'Evaluation');
+                }}
+                className="px-2 py-1.5 bg-slate-50 text-xs border border-slate-200 font-bold outline-none rounded-sm focus:border-[#0076ce] cursor-pointer"
+              >
+                <optgroup label="Active hackathons">
+                  {hackathons.filter(h => h.status === 'active').map(h => <option key={h.id} value={h.id}>{h.title}</option>)}
+                </optgroup>
+                <optgroup label="Past hackathons">
+                  {hackathons.filter(h => h.status === 'past').map(h => <option key={h.id} value={h.id}>{h.title}</option>)}
+                </optgroup>
+              </select>
+            </div>
           </div>
+
+          {authUser?.reviewer_status === 'pending' ? (
+            <div className="bg-white p-12 border border-amber-200 rounded-lg text-center flex flex-col items-center justify-center space-y-4 shadow-sm relative overflow-hidden">
+              <div className="absolute inset-0 bg-amber-500/5 pattern-diagonal-lines opacity-20" />
+              <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center z-10 shadow-sm">
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-black text-amber-950 z-10">Account Pending Verification</h3>
+              <p className="text-slate-600 max-w-lg z-10 leading-relaxed text-sm">
+                Thank you for registering as a Jury Member. To ensure the highest standard of evaluation, 
+                our organizing committee is currently reviewing your background via your provided LinkedIn profile. 
+                <br /><br />
+                <strong>You will receive access to the Evaluation Workbench once approved.</strong>
+              </p>
+            </div>
+          ) : (
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
@@ -2391,6 +2540,7 @@ export default function App() {
             </div>
 
           </div>
+          )}
         </div>
       )}
 
@@ -2448,7 +2598,7 @@ export default function App() {
               
               {/* DYNAMIC TIMELINE VISIBILITY CHECKLIST BASED ON TYPE */}
               <div className="p-5 border border-slate-200 bg-white rounded-sm space-y-4">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono block">Operational Progress State: {selectedHackathon.title}</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono block">Operational Progress State: {selectedHackathon?.title}</span>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded leading-relaxed">
@@ -2459,13 +2609,53 @@ export default function App() {
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded leading-relaxed">
                     <Activity className="h-4 w-4 inline mr-1.5 text-blue-600 animate-pulse" />
                     <strong>Build Development</strong>
-                    <p className="text-[10px] text-slate-500 mt-1">Assembly ongoing for {selectedHackathon.track}.</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Assembly ongoing for {selectedHackathon?.track}.</p>
                   </div>
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded leading-relaxed">
                     <Clock className="h-4 w-4 inline mr-1.5 text-slate-400" />
                     <strong>Jury Assessment</strong>
                     <p className="text-[10px] text-slate-500 mt-1">Scores balance using z-score normalization matrices.</p>
                   </div>
+                </div>
+              </div>
+
+              {/* AVAILABLE EVENTS ENROLLMENT */}
+              <div className="p-5 border border-slate-200 bg-white rounded-sm space-y-4">
+                <div className="border-b border-slate-100 pb-2">
+                  <h3 className="text-sm font-extrabold text-[#0c2340] uppercase tracking-wide">Available Hackathons</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Enroll to participate in ongoing and upcoming events.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {hackathons.filter(h => h.status !== 'past').map(h => {
+                    const hackIdInt = parseInt(h.id.replace('hack-', ''), 10) || 1;
+                    const isEnrolled = enrolledHackathons.some(e => e.id === hackIdInt);
+                    return (
+                      <div key={h.id} className="p-3 border border-slate-200 rounded-sm bg-slate-50 flex flex-col justify-between">
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900">{h.title}</h4>
+                          <span className="text-[10px] uppercase font-mono text-slate-500 mb-2 inline-block">{h.status} | {h.track}</span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.enrollInEvent(hackIdInt);
+                              const enrolled = await api.getEnrolledEvents().catch(() => []);
+                              setEnrolledHackathons(enrolled);
+                            } catch (e: any) {
+                              alert('Failed to enroll: ' + e.message);
+                            }
+                          }}
+                          disabled={isEnrolled}
+                          className={`mt-2 py-1.5 px-3 text-xs font-bold uppercase rounded-sm transition-colors ${isEnrolled ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-[#0076ce] text-white hover:bg-[#005a9e]'}`}
+                        >
+                          {isEnrolled ? 'Enrolled' : 'Enroll Now'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {hackathons.filter(h => h.status !== 'past').length === 0 && (
+                    <p className="text-xs text-slate-500">No active or upcoming events at this time.</p>
+                  )}
                 </div>
               </div>
 
@@ -2646,6 +2836,211 @@ export default function App() {
           [Recover Baseline Portfolio Matrices]
         </button>
       </div>
+
+      {/* PULSEFORGE AI CO-PILOT FLOATING BUTTON - HIDDEN ON LOGIN */}
+      {activeRole !== 'login' && (
+        <button
+          onClick={() => {
+            setIsAiHubOpen(true);
+            if (activeRole === 'organizer') setAiActiveSection('duplicates');
+            else setAiActiveSection('audit');
+          }}
+          className="fixed bottom-6 right-6 z-40 bg-[#0076ce] hover:bg-[#00558f] text-white p-4 rounded-full shadow-2xl flex items-center justify-center transition-transform hover:scale-110 border-2 border-white/20"
+          title="Open AI Co-Pilot"
+        >
+          <Sparkles className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* GLOBAL LEADERBOARD MODAL */}
+      {showGlobalLeaderboard && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
+            <div className="p-5 bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 flex justify-between items-center shadow-md">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🏆</span>
+                <h3 className="font-disp font-black text-xl uppercase tracking-wider">Official Final Leaderboard</h3>
+              </div>
+              <button onClick={() => setShowGlobalLeaderboard(false)} className="text-amber-950/70 hover:text-amber-950 cursor-pointer">
+                <span className="sr-only">Close</span>
+                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-0 bg-slate-50">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-white shadow-sm z-10">
+                  <tr className="border-b border-slate-200 text-slate-500 font-mono font-bold uppercase text-[10px] tracking-wider">
+                    <th className="py-4 px-6 w-24">Rank</th>
+                    <th className="py-4 px-6">Project Title</th>
+                    <th className="py-4 px-6 text-center w-48">Final Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(liveRankings.length > 0 ? liveRankings.map(r => ({
+                    id: api.toFrontendId('proj', r.project_id),
+                    title: r.title,
+                    norm: r.normalized_mean,
+                    rank: r.rank,
+                  })) : filteredProjects.map((p, index) => {
+                    const m = computeProjectMetrics(p.id);
+                    return { id: p.id, title: p.title, norm: m.normalizedScore, rank: index + 1 };
+                  })).sort((a,b) => a.rank - b.rank).map((row, idx) => (
+                      <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${idx === 0 ? 'bg-amber-50/50' : idx === 1 ? 'bg-slate-100/50' : idx === 2 ? 'bg-orange-50/30' : ''}`}>
+                        <td className="py-5 px-6">
+                          <span className={`font-mono px-3 py-1.5 rounded font-black text-base ${idx === 0 ? 'bg-amber-400 text-amber-950 shadow-sm' : idx === 1 ? 'bg-slate-300 text-slate-800' : idx === 2 ? 'bg-orange-300 text-orange-950' : 'bg-slate-200 text-slate-600'}`}>
+                            #{row.rank}
+                          </span>
+                        </td>
+                        <td className={`py-5 px-6 font-black text-lg leading-snug ${idx < 3 ? 'text-slate-900' : 'text-slate-700'}`}>
+                          {row.title} {idx === 0 && <span className="ml-2 animate-pulse">👑</span>}
+                        </td>
+                        <td className="py-5 px-6 text-center font-mono font-black text-xl text-[#0076ce]">
+                          {row.norm > 0 ? `${row.norm.toFixed(1)}` : '—'}
+                        </td>
+                      </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PULSEFORGE AI CO-PILOT MODAL */}
+      {isAiHubOpen && activeRole !== 'login' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
+            <div className="p-4 bg-[#0B1E36] text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#C4B495]" />
+                <h3 className="font-disp font-bold text-lg">PulseForge AI Co-Pilot</h3>
+              </div>
+              <button onClick={() => setIsAiHubOpen(false)} className="text-slate-300 hover:text-white cursor-pointer">
+                <span className="sr-only">Close</span>
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex border-b border-slate-200 bg-slate-50">
+              {activeRole !== 'organizer' && (
+                <button
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors ${aiActiveSection === 'audit' ? 'border-b-2 border-[#0076ce] text-[#0076ce] bg-white' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+                  onClick={() => setAiActiveSection('audit')}
+                >
+                  Architecture Audit
+                </button>
+              )}
+              {activeRole === 'participant' && (
+                <button
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors ${aiActiveSection === 'pitch' ? 'border-b-2 border-[#0076ce] text-[#0076ce] bg-white' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+                  onClick={() => setAiActiveSection('pitch')}
+                >
+                  Pitch Generator
+                </button>
+              )}
+              {activeRole === 'organizer' && (
+                <button
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors ${aiActiveSection === 'duplicates' ? 'border-b-2 border-[#0076ce] text-[#0076ce] bg-white' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+                  onClick={() => setAiActiveSection('duplicates')}
+                >
+                  Fraud Scanner
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50">
+              {activeRole !== 'organizer' && aiActiveSection === 'audit' && (
+                <div className="space-y-4">
+                  <div className="bg-white p-5 border border-slate-200 rounded shadow-sm">
+                    <h4 className="text-xs font-bold uppercase text-slate-500 mb-2">Simulate Hackathon Project Evaluation</h4>
+                    <p className="text-xs text-slate-600 mb-4">Analyze a candidate submission based on Enterprise standards: Virtualization, GreenOps, Zero-Trust, and Edge AI.</p>
+                    <button
+                      onClick={handleAnalyzeDellPotential}
+                      disabled={isAuditing}
+                      className="w-full py-2.5 bg-[#0076ce] hover:bg-[#00558f] text-white rounded text-xs font-bold uppercase tracking-wide cursor-pointer disabled:opacity-50 flex justify-center items-center gap-2 transition-colors"
+                    >
+                      {isAuditing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                      Run Deep Architecture Audit
+                    </button>
+                  </div>
+                  {auditResult && (
+                    <div className="bg-white p-5 border border-slate-200 rounded shadow-sm">
+                      <MarkdownRenderer content={auditResult} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeRole === 'participant' && aiActiveSection === 'pitch' && (
+                <div className="space-y-4">
+                  <div className="bg-white p-5 border border-slate-200 rounded shadow-sm">
+                    <h4 className="text-xs font-bold uppercase text-slate-500 mb-2">Live Demonstration Script Generator</h4>
+                    <div className="mb-4">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Target Audience</label>
+                      <select
+                        value={pitchAudience}
+                        onChange={(e) => setPitchAudience(e.target.value as any)}
+                        className="w-full border border-slate-300 rounded px-3 py-2 text-xs outline-none focus:border-[#0076ce] bg-slate-50"
+                      >
+                        <option value="Dell Enterprise Venture Capital">Dell Enterprise Venture Capital</option>
+                        <option value="Technical Faculty Director">Technical Faculty Director</option>
+                        <option value="Green Computing Council">Green Computing Council</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={handleGeneratePitchScript}
+                      disabled={isGeneratingPitch}
+                      className="w-full py-2.5 bg-[#0076ce] hover:bg-[#00558f] text-white rounded text-xs font-bold uppercase tracking-wide cursor-pointer disabled:opacity-50 flex justify-center items-center gap-2 transition-colors"
+                    >
+                      {isGeneratingPitch ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                      Generate 60-Sec Pitch Script
+                    </button>
+                  </div>
+                  {pitchResult && (
+                    <div className="bg-white p-5 border border-slate-200 rounded shadow-sm">
+                      <MarkdownRenderer content={pitchResult} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeRole === 'organizer' && aiActiveSection === 'duplicates' && (
+                <div className="space-y-4">
+                  <div className="bg-white p-5 border border-slate-200 rounded shadow-sm">
+                    <h4 className="text-xs font-bold uppercase text-slate-500 mb-2">Fraud & Duplicate Scanning</h4>
+                    <p className="text-xs text-slate-600 mb-4">Run ML-based fuzzy matching against existing registrations to detect sock-puppet or overlapping accounts.</p>
+                    <button
+                      onClick={handleFuzzyDupScan}
+                      disabled={isDupScanning}
+                      className="w-full py-2.5 bg-[#0076ce] hover:bg-[#00558f] text-white rounded text-xs font-bold uppercase tracking-wide cursor-pointer disabled:opacity-50 flex justify-center items-center gap-2 transition-colors"
+                    >
+                      {isDupScanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+                      Scan Current Participant Matrix
+                    </button>
+                  </div>
+                  {dupScanResult && (
+                    <div className={`p-4 border rounded shadow-sm ${dupScanResult.duplicateDetected ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <strong className={`text-sm ${dupScanResult.duplicateDetected ? 'text-red-700' : 'text-emerald-700'}`}>
+                          {dupScanResult.duplicateDetected ? '⚠️ Potential Duplicate Detected' : '✅ Identity Verified (Unique)'}
+                        </strong>
+                        <span className="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
+                          Confidence: {Math.round(dupScanResult.confidenceScore * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700"><strong>Reason:</strong> {dupScanResult.reason}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

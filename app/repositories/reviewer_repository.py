@@ -17,6 +17,7 @@ class ReviewerRepository:
         expertise_text: Optional[str] = None,
         max_workload: int = 5,
         participant_id: Optional[int] = None,
+        linkedin_url: Optional[str] = None,
     ) -> Reviewer:
         reviewer = Reviewer(
             full_name=full_name,
@@ -25,6 +26,8 @@ class ReviewerRepository:
             expertise_text=expertise_text,
             max_workload=max_workload,
             participant_id=participant_id,
+            linkedin_url=linkedin_url,
+            status="pending",
         )
         self.db.add(reviewer)
         self.db.commit()
@@ -39,6 +42,14 @@ class ReviewerRepository:
 
     def list_all(self) -> List[Reviewer]:
         return self.db.query(Reviewer).all()
+
+    def update_status(self, reviewer_id: int, status: str) -> Optional[Reviewer]:
+        reviewer = self.get_by_id(reviewer_id)
+        if reviewer:
+            reviewer.status = status
+            self.db.commit()
+            self.db.refresh(reviewer)
+        return reviewer
 
     def add_expertise(self, reviewer_id: int, skill_id: int) -> ReviewerExpertise:
         existing = (
