@@ -114,6 +114,12 @@ Output ONLY the sentence, no preamble."""
 
 
 def generate_team_rationale(covered: list[str], gaps: list[str]) -> str:
+    if _model is None:
+        if covered and gaps:
+            return f"Strong in {', '.join(covered[:2])}; gaps in {', '.join(gaps[:2])}."
+        elif covered:
+            return f"Well-rounded team covering {', '.join(covered[:3])}."
+        return "Team formed based on available skill complementarity."
     try:
         prompt = TEAM_RATIONALE_PROMPT.format(
             covered=", ".join(covered) if covered else "none",

@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: Hackathon Manager",
+  "description": "An intelligent, responsive dashboard transforming hackathon operations with automated participant deduplication, expertise-based reviewer assignment, real-time bias detection, and offline-ready local persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

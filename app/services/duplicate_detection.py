@@ -65,3 +65,43 @@ class DuplicateDetectionService:
                 )
 
         return results
+
+    def scan_raw_participant(self, full_name: str, email: str, organization: str = None) -> List[Dict]:
+        candidates = self.participant_repo.list_for_duplicate_scan()
+        results = []
+
+        for candidate in candidates:
+            match_type = None
+            confidence = 0.0
+
+            if candidate.email.lower() == email.lower():
+                match_type = "exact_email"
+                confidence = 1.0
+            else:
+                name_score = name_similarity(full_name, candidate.full_name)
+                same_org = bool(organization) and (
+                    (organization or "").strip().lower()
+                    == (candidate.organization or "").strip().lower()
+                )
+
+                if name_score >= FUZZY_NAME_THRESHOLD:
+                    match_type = "fuzzy_name"
+                    confidence = min(1.0, name_score + (0.1 if same_org else 0))
+                elif same_org and name_score >= ORG_NAME_THRESHOLD:
+                    match_type = "organization"
+                    confidence = round(0.4 + (name_score * 0.3), 2)
+
+            if match_type:
+                results.append(
+                    {
+                        "matched_participant_id": candidate.id,
+                        "matched_name": candidate.full_name,
+                        "matched_email": candidate.email,
+                        "match_type": match_type,
+                        "confidence_score": round(confidence, 2),
+                    }
+                )
+
+        # Sort by confidence
+        results.sort(key=lambda x: x["confidence_score"], reverse=True)
+        return results

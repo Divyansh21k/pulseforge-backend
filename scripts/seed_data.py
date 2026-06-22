@@ -20,11 +20,14 @@ from app.core.database import Base, engine, SessionLocal
 from app import models  # noqa: F401
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.team_repository import TeamRepository
+from app.repositories.event_repository import EventRepository
 from app.services.project_service import ProjectService
 from app.services.reviewer_service import ReviewerService
 from app.services.reviewer_assignment import ReviewerAssignmentService
 from app.services.evaluation_service import EvaluationService
 from app.services.bias_detection import ScoreNormalizationService, BiasDetectionService
+
+from app.utils.security import hash_password
 
 random.seed(42)
 
@@ -54,18 +57,18 @@ SKILL_PHRASES = [
     "Cloud architecture on gcp and azure, plus some devops",
 ]
 PROJECT_IDEAS = [
-    ("CampusConnect", "A social platform connecting students across departments for project collaboration.", "react, nodejs, sql"),
-    ("EcoTrack", "Carbon footprint tracker using machine learning predictions for daily habits.", "python, machine-learning, react"),
-    ("SmartAttend", "AI-powered attendance system using facial recognition.", "python, opencv, react"),
-    ("StudyBuddy", "AI tutor that generates personalized practice questions from lecture notes.", "python, machine-learning, nodejs"),
-    ("MedAlert", "Wearable health monitor with anomaly detection alerts.", "python, machine-learning, mobile"),
-    ("CodeReview AI", "Automated code review assistant flagging bugs and style issues.", "python, javascript, backend"),
-    ("VolunteerHub", "Matches student volunteers to local NGOs based on skills.", "react, nodejs, sql"),
-    ("AgriSense", "IoT + ML system predicting crop yield from sensor data.", "python, machine-learning, devops"),
-    ("CampusEats", "Crowd-sourced cafeteria wait-time predictor.", "react, python, sql"),
-    ("SecureVote", "Blockchain-based voting system for student council elections.", "blockchain, solidity, react"),
-    ("MindfulMe", "Mental wellness check-in app with sentiment analysis.", "python, machine-learning, mobile"),
-    ("BugHunters", "Crowdsourced bug bounty platform for student-built apps.", "cybersecurity, nodejs, react"),
+    ("CampusConnect", "A social platform connecting students across departments for project collaboration.", "react, nodejs, sql", "https://github.com/mockuser/campusconnect"),
+    ("EcoTrack", "Carbon footprint tracker using machine learning predictions for daily habits.", "python, machine-learning, react", "https://github.com/mockuser/ecotrack"),
+    ("SmartAttend", "AI-powered attendance system using facial recognition.", "python, opencv, react", "https://github.com/mockuser/smartattend"),
+    ("StudyBuddy", "AI tutor that generates personalized practice questions from lecture notes.", "python, machine-learning, nodejs", "https://github.com/mockuser/studybuddy"),
+    ("MedAlert", "Wearable health monitor with anomaly detection alerts.", "python, machine-learning, mobile", "https://github.com/mockuser/medalert"),
+    ("CodeReview AI", "Automated code review assistant flagging bugs and style issues.", "python, javascript, backend", "https://github.com/mockuser/codereview-ai"),
+    ("VolunteerHub", "Matches student volunteers to local NGOs based on skills.", "react, nodejs, sql", "https://github.com/mockuser/volunteerhub"),
+    ("AgriSense", "IoT + ML system predicting crop yield from sensor data.", "python, machine-learning, devops", "https://github.com/mockuser/agrisense"),
+    ("CampusEats", "Crowd-sourced cafeteria wait-time predictor.", "react, python, sql", "https://github.com/mockuser/campuseats"),
+    ("SecureVote", "Blockchain-based voting system for student council elections.", "blockchain, solidity, react", "https://github.com/mockuser/securevote"),
+    ("MindfulMe", "Mental wellness check-in app with sentiment analysis.", "python, machine-learning, mobile", "https://github.com/mockuser/mindfulme"),
+    ("BugHunters", "Crowdsourced bug bounty platform for student-built apps.", "cybersecurity, nodejs, react", "https://github.com/mockuser/bughunters"),
 ]
 REVIEWER_PROFILES = [
     ("Dr. Ananya Rao", "VIT University", "machine learning, python, data science, statistics"),
@@ -87,6 +90,69 @@ def run():
     t_repo = TeamRepository(db)
     proj_service = ProjectService(db)
     rev_service = ReviewerService(db)
+
+    print("Creating demo auth accounts...")
+    demo_users = [
+        ("Alexander Vance", "organizer@pulseforge.dev", "organizer", "PulseForge HQ"),
+        ("Dr. Marcus Chen", "reviewer@pulseforge.dev", "reviewer", "MIT"),
+        ("Elena Rostova", "participant@pulseforge.dev", "participant", "Stanford"),
+    ]
+    for name, email, role, org in demo_users:
+        if not p_repo.get_by_email(email):
+            user = p_repo.create(name, email, None, org, "python, react, machine learning")
+            user.role = role
+            user.hashed_password = hash_password("demo1234")
+            db.commit()
+            if role == "reviewer":
+                try:
+                    rev = rev_service.create_reviewer(
+                        name, email, organization=org,
+                        expertise_text="machine learning, python, data science",
+                        max_workload=4, participant_id=user.id,
+                    )
+                    db.query(models.Reviewer).filter(models.Reviewer.id == rev.id).update({"status": "approved"})
+                    db.commit()
+                except ValueError:
+                    pass
+    print("  demo login: organizer@pulseforge.dev / demo1234 (organizer)")
+    print("  demo login: reviewer@pulseforge.dev / demo1234 (reviewer)")
+    print("  demo login: participant@pulseforge.dev / demo1234 (participant)")
+
+    if p_repo.get_by_email("participant1@hackathon.dev"):
+        print("Bulk demo dataset already present. Skipping re-seed.")
+        db.close()
+        return
+
+    print("Seeding events...")
+    e_repo = EventRepository(db)
+    from datetime import datetime, timedelta
+    
+    organizer = p_repo.get_by_email("organizer@pulseforge.dev")
+    events_to_create = [
+        ("Global AI Hackathon 2026", "AI/ML & Sustainability"),
+        ("FinTech Disrupt", "Enterprise Security & Finance"),
+        ("EduTech Innovators", "Education & Accessibility"),
+        ("Web3 Decentralize", "Blockchain & Smart Contracts"),
+        ("HealthTech Open", "Medical IoT & Data Science"),
+    ]
+    
+    # Shuffle and pick a random subset to ensure variance across re-seeds
+    random.shuffle(events_to_create)
+    events_to_seed = events_to_create[:random.randint(3, 5)]
+    
+    for name, theme in events_to_seed:
+        # Vary the start and end dates
+        start_offset = random.randint(-10, 5)
+        duration = random.randint(2, 30)
+        e_repo.create(
+            name, 
+            theme, 
+            organizer.id, 
+            datetime.utcnow() + timedelta(days=start_offset), 
+            datetime.utcnow() + timedelta(days=start_offset + duration)
+        )
+    print(f"  created {len(events_to_seed)} events")
+
 
     print("Seeding participants...")
     participants = []
@@ -112,10 +178,16 @@ def run():
 
     print("Submitting projects...")
     projects = []
-    for i, (title, desc, stack) in enumerate(PROJECT_IDEAS):
+    for i, (title, desc, stack, repo_url) in enumerate(PROJECT_IDEAS):
         team = teams[i % len(teams)]
+        # Add repo_url to the description or store it if the model supports it.
+        # Looking at ProjectService, create_project takes (team_id, title, description, tech_stack_text)
+        # We will append the repo url to the description for now or if repo_url is a field, pass it.
+        # Let's check if repo_url exists in ProjectService. If not, append it.
         proj = proj_service.create_project(team.id, title, desc, stack)
+        proj.repo_url = repo_url
         projects.append(proj)
+    db.commit()
     print(f"  created {len(projects)} projects")
 
     print("Registering reviewers (this uses the skill-extraction fallback if no Gemini key is set)...")
@@ -124,6 +196,8 @@ def run():
         email = f"{name.split()[-1].lower()}@reviewers.dev"
         try:
             rev = rev_service.create_reviewer(name, email, organization=org, expertise_text=expertise, max_workload=4)
+            db.query(models.Reviewer).filter(models.Reviewer.id == rev.id).update({"status": "approved"})
+            db.commit()
             reviewers.append(rev)
         except ValueError:
             pass  # already exists, skip on re-seed

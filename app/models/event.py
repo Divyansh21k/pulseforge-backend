@@ -19,3 +19,14 @@ class Event(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     organizer = relationship("Participant")
+
+class EventEnrollment(Base):
+    __tablename__ = "event_enrollments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=False)
+    enrolled_at = Column(DateTime, default=datetime.utcnow)
+
+    event = relationship("Event")
+    participant = relationship("Participant")

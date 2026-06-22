@@ -2,16 +2,38 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.models.participant import Participant
+from app.repositories.reviewer_repository import ReviewerRepository
 from app.schemas.evaluation import EvaluationCreate
 from app.services.evaluation_service import EvaluationService
 from app.services.bias_detection import ScoreNormalizationService, BiasDetectionService
 from app.repositories.evaluation_repository import EvaluationRepository, BiasFlagRepository
+from app.utils.auth_deps import get_current_user, require_organizer, require_reviewer
+from app.utils.roles import is_organizer
 
 router = APIRouter(prefix="/api/evaluations", tags=["Evaluation Workflow"])
 
 
+def _verify_reviewer_identity(db: Session, current_user: Participant, reviewer_id: int) -> None:
+    if is_organizer(current_user.role):
+        return
+    reviewer = ReviewerRepository(db).get_by_id(reviewer_id)
+    if not reviewer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reviewer not found")
+    if reviewer.email != current_user.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You may only submit evaluations as your own reviewer profile",
+        )
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def submit_evaluation(payload: EvaluationCreate, db: Session = Depends(get_db)):
+def submit_evaluation(
+    payload: EvaluationCreate,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(require_reviewer),
+):
+    _verify_reviewer_identity(db, current_user, payload.reviewer_id)
     service = EvaluationService(db)
     try:
         evaluation = service.submit_evaluation(
@@ -36,7 +58,11 @@ def submit_evaluation(payload: EvaluationCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/project/{project_id}")
-def list_evaluations_for_project(project_id: int, db: Session = Depends(get_db)):
+def list_evaluations_for_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     repo = EvaluationRepository(db)
     evals = repo.list_for_project(project_id)
     return [
@@ -56,25 +82,20 @@ def list_evaluations_for_project(project_id: int, db: Session = Depends(get_db))
 
 
 @router.post("/normalize")
-def normalize_scores(db: Session = Depends(get_db)):
-    """
-    Corrects for each reviewer's personal scoring tendency (harsh/lenient)
-    via per-reviewer z-score normalization (PS1 section 4.5).
-    Should be run after evaluations come in and before bias detection /
-    results generation.
-    """
+def normalize_scores(
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(require_organizer),
+):
     service = ScoreNormalizationService(db)
     updated = service.normalize_all()
     return {"evaluations_normalized": updated}
 
 
 @router.post("/bias-scan")
-def run_bias_scan(db: Session = Depends(get_db)):
-    """
-    Runs both cohort-level (gender/geographic/institutional/tech-stack)
-    and reviewer-level outlier bias detection (PS1 section 4.5 / 6.3).
-    Requires normalize_scores to have been run first for meaningful results.
-    """
+def run_bias_scan(
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(require_organizer),
+):
     service = BiasDetectionService(db)
     cohort_flags = service.detect_cohort_bias()
     reviewer_flags = service.detect_reviewer_outliers()
@@ -87,7 +108,11 @@ def run_bias_scan(db: Session = Depends(get_db)):
 
 
 @router.get("/bias-flags")
-def list_bias_flags(status_filter: str = None, db: Session = Depends(get_db)):
+def list_bias_flags(
+    status_filter: str = None,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     repo = BiasFlagRepository(db)
     flags = repo.list_all(status=status_filter)
     return [
