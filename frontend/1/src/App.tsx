@@ -1428,15 +1428,20 @@ export default function App() {
                 </div>
 
                 {/* Live stats from backend when available */}
-                <div className="flex flex-wrap gap-8 pt-4">
+                <div className="flex flex-wrap gap-6 pt-4">
                   <div>
-                    <h4 className="text-2xl font-black font-disp">{backendOnline ? statsCounter.participantsCount : '—'}</h4>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">registered participants {backendOnline ? '(live)' : '(connect API)'}</span>
+                    <h4 className="text-2xl font-black font-disp text-white">{backendOnline ? statsCounter.hackathonsCount : '—'}</h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">hackathons hosted</span>
                   </div>
                   <div className="h-10 w-px bg-white/10" />
                   <div>
-                    <h4 className="text-2xl font-black font-disp">{backendOnline ? analyticsOverview?.projects?.total || 0 : '—'}</h4>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">projects submitted</span>
+                    <h4 className="text-2xl font-black font-disp text-white">{backendOnline ? statsCounter.participantsCount : '—'}</h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">global developers</span>
+                  </div>
+                  <div className="h-10 w-px bg-white/10" />
+                  <div>
+                    <h4 className="text-2xl font-black font-disp text-white">{backendOnline ? '$2.5M+' : '—'}</h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">prizes awarded</span>
                   </div>
                 </div>
               </div>
