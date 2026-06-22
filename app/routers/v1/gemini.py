@@ -39,7 +39,7 @@ class JudgeEvaluatePayload(BaseModel):
 def analyze_dell_potential(payload: AnalyzePayload):
     if not _model:
         return {
-            "feedback": "### ⚠️ Local AI Emulation Mode Active\n\nTo test live Gemini generations, ensure you populate the **GEMINI_API_KEY**.\n\n#### **Pre-Evaluation Metrics (Emulated Baseline)**\n- **WIN PROBABILITY: 85%**\n- **Architecture alignment**: Your general outline matches key trends.\n- **Critical Recommendation**: To lock in first place, explicit architecture deployment diagrams highlighting **Enterprise Cloud** clusters mapping real-time sensor streams and local **Hybrid Workloads** must be mentioned.\n- **Green Computing Advice**: Map carbon offsets dynamically via lightweight database telemetry sensors."
+            "feedback": f"### ⚠️ Local AI Emulation Mode Active\n\nTo test live Gemini generations, ensure you populate the **GEMINI_API_KEY**.\n\n#### **Pre-Evaluation Metrics for {payload.title or 'Your Project'}**\n- **WIN PROBABILITY: {len(payload.title) % 20 + 75}%**\n- **Architecture alignment**: Your general outline matches key trends for a {payload.techStack or 'standard'} stack.\n- **Critical Recommendation**: To lock in first place, explicit architecture deployment diagrams highlighting **Enterprise Cloud** clusters mapping real-time sensor streams and local **Hybrid Workloads** must be mentioned in your repository ({payload.repoUrl or 'no repo provided'}).\n- **Green Computing Advice**: Map carbon offsets dynamically via lightweight database telemetry sensors."
         }
 
     prompt = f"""You are a Senior Executive Distinguished Engineer and Principal Hackathon Juror.
@@ -76,7 +76,7 @@ Keep the advice clinical, highly expert, authentic to modern enterprise tech, en
 def generate_pitch(payload: PitchPayload):
     if not _model:
         return {
-            "script": "## 🎙️ Emulated Elevator Pitch & Cue Card\n\n**[00:00 - 00:15] Open with a visual punch**\n- *Visual*: Stand tall, screen shared with an elegant flow diagram of telemetry streams. \n- *Audio*: Hello, judges! We created a dynamic workspace resolving the core operational bottlenecks of enterprise telemetry.\n\n**[00:15 - 00:45] The Technical Deep-dive**\n- *Visual*: Switch to the Live Dashboard highlighting z-score normalized evaluations and secure endpoint routes.\n- *Audio*: Running on local edge instances, our solution couples low-latency inference loops with real-time analytics, scaling securely across enterprise servers.\n\n**[00:45 - 01:00] The Ask & Integration**\n- *Visual*: Show the Cloud workflow integration slide.\n- *Audio*: By bridging the gaps between co-founder capabilities and expert jury allocations, we guarantee 100% operational fairness. That is how we power edge workspaces! Thank you."
+            "script": f"## 🎙️ Emulated Elevator Pitch & Cue Card for {payload.title}\n\n**[00:00 - 00:15] Open with a visual punch**\n- *Visual*: Stand tall, screen shared with an elegant flow diagram of {payload.techStack} telemetry streams. \n- *Audio*: Hello, {payload.targetAudience}! We created {payload.title} to resolve the core operational bottlenecks. {payload.tagline}\n\n**[00:15 - 00:45] The Technical Deep-dive**\n- *Visual*: Switch to the Live Dashboard highlighting z-score normalized evaluations and secure endpoint routes.\n- *Audio*: Running on local edge instances, our solution couples low-latency inference loops with real-time analytics, scaling securely across enterprise servers.\n\n**[00:45 - 01:00] The Ask & Integration**\n- *Visual*: Show the Cloud workflow integration slide.\n- *Audio*: By bridging the gaps between co-founder capabilities and expert jury allocations, we guarantee 100% operational fairness. That is how we power edge workspaces! Thank you."
         }
 
     prompt = f"""Write a high-impact, professional 60-second video elevator pitch or live demonstration script for the following competitor hackathon project.
@@ -104,7 +104,7 @@ Include professional hooks emphasizing scaling parameters, business metrics, and
 def analyze_bias(payload: BiasAnalyzePayload):
     if not _model:
         return {
-            "analysis": "### ⚠️ Emulated Bias Analysis\n\nThe AI detects that Reviewer 7 is grading 2.8 standard deviations harsher than the cohort mean. This is likely due to mismatched domain expertise or systemic strictness. We recommend enabling normalization immediately."
+            "analysis": f"### ⚠️ Emulated Bias Analysis\n\nThe AI detects {len(payload.reviewer_flags)} reviewer anomalies and {len(payload.cohort_flags)} cohort anomalies. Reviewer grading is 2.8 standard deviations harsher than the cohort mean. This is likely due to mismatched domain expertise or systemic strictness. We recommend enabling normalization immediately."
         }
 
     prompt = f"""You are the Chief Data Scientist for a hackathon. Analyze the following evaluation bias flags and explain them simply to the event organizer, suggesting how normalization will fix it.
@@ -124,7 +124,7 @@ Provide a 2-paragraph summary. Do not use generic filler words."""
 def evaluate_project(payload: JudgeEvaluatePayload):
     if not _model:
         return {
-            "evaluation": "### ⚠️ Emulated Judge AI Copilot\n\n**Suggested Scores:**\n- Innovation: 8.5\n- Technical: 7.0\n- Impact: 8.0\n- Presentation: 7.5\n\n**Reasoning:** The stack is solid but the repository lacks a clear README."
+            "evaluation": f"### ⚠️ Emulated Judge AI Copilot\n\n**Suggested Scores for {payload.title}:**\n- Innovation: {len(payload.title) % 5 + 5}.5\n- Technical: {len(payload.techStack) % 4 + 6}.0\n- Impact: 8.0\n- Presentation: 7.5\n\n**Reasoning:** The stack ({payload.techStack}) is solid but the repository ({payload.repoUrl}) lacks a clear README. The project description '{payload.description[:30]}...' is a good start."
         }
 
     prompt = f"""You are an AI Copilot assisting a Hackathon Judge. Analyze this project based on its technical stack and description.

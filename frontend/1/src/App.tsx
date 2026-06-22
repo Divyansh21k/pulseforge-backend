@@ -367,8 +367,8 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cohort_flags: liveBiasFlags.filter(f => f.flag_type === 'cohort').map(f => f.description),
-          reviewer_flags: liveBiasFlags.filter(f => f.flag_type === 'reviewer').map(f => f.description)
+          cohort_flags: liveBiasFlags.filter(f => f.scope === 'cohort').map(f => f.description),
+          reviewer_flags: liveBiasFlags.filter(f => f.scope === 'reviewer').map(f => f.description)
         })
       });
       const data = await resp.json();
@@ -2013,7 +2013,7 @@ export default function App() {
                   Systemic Bias Detected ({liveBiasFlags.length} Flags)
                 </h3>
                 <p className="text-red-600 text-xs mt-1 max-w-2xl">
-                  The backend normalization engine has detected {liveBiasFlags.filter(f => f.flag_type === 'reviewer').length} reviewer anomalies and {liveBiasFlags.filter(f => f.flag_type === 'cohort').length} cohort anomalies. Immediate rectification recommended.
+                  The backend normalization engine has detected {liveBiasFlags.filter(f => f.scope === 'reviewer').length} reviewer anomalies and {liveBiasFlags.filter(f => f.scope === 'cohort').length} cohort anomalies. Immediate rectification recommended.
                 </p>
                 {organizerAiResult && (
                   <div className="mt-3 text-[11px] text-red-900 bg-red-100/70 border border-red-200 p-3 rounded shadow-sm max-w-3xl leading-relaxed">
@@ -2984,9 +2984,10 @@ export default function App() {
                         <span className="font-semibold text-slate-400 uppercase font-mono">{roleMatch}</span>
                         <button
                           onClick={() => handleInviteToTeam(peer.id)}
-                          className="px-2.5 py-1 bg-[#0076ce] hover:bg-[#00558f] text-white font-bold uppercase tracking-wide text-[9.5px] rounded-sm transition-all"
+                          disabled={pendingInvites.some(i => i.to === peer.name)}
+                          className={`px-2.5 py-1 ${pendingInvites.some(i => i.to === peer.name) ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-[#0076ce] hover:bg-[#00558f] text-white cursor-pointer'} font-bold uppercase tracking-wide text-[9.5px] rounded-sm transition-all`}
                         >
-                          Pair Teammate
+                          {pendingInvites.some(i => i.to === peer.name) ? 'Invited' : 'Pair Teammate'}
                         </button>
                       </div>
                     </div>
