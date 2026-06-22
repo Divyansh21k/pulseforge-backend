@@ -1435,8 +1435,8 @@ export default function App() {
                   </div>
                   <div className="h-10 w-px bg-white/10" />
                   <div>
-                    <h4 className="text-2xl font-black font-disp">{backendOnline ? `${statsCounter.timeSaved}%` : '—'}</h4>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">evaluation completion</span>
+                    <h4 className="text-2xl font-black font-disp">{backendOnline ? analyticsOverview?.projects?.total || 0 : '—'}</h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">projects submitted</span>
                   </div>
                 </div>
               </div>
@@ -2630,10 +2630,16 @@ export default function App() {
                     const hackIdInt = parseInt(h.id.replace('hack-', ''), 10) || 1;
                     const isEnrolled = enrolledHackathons.some(e => e.id === hackIdInt);
                     return (
-                      <div key={h.id} className="p-3 border border-slate-200 rounded-sm bg-slate-50 flex flex-col justify-between">
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-900">{h.title}</h4>
-                          <span className="text-[10px] uppercase font-mono text-slate-500 mb-2 inline-block">{h.status} | {h.track}</span>
+                      <div key={h.id} className="p-3 border border-slate-200 rounded-sm bg-slate-50 flex flex-col justify-between group relative transition-all hover:border-[#0076ce] hover:shadow-md hover:-translate-y-0.5">
+                        <div className="mb-2">
+                          <h4 className="font-bold text-sm text-slate-900 group-hover:text-[#0076ce] transition-colors">{h.title}</h4>
+                          <span className="text-[10px] uppercase font-mono text-slate-500 inline-block">{h.status} | {h.track}</span>
+                          
+                          <div className="max-h-0 opacity-0 overflow-hidden group-hover:max-h-24 group-hover:opacity-100 group-hover:mt-2 transition-all duration-300 ease-in-out text-[10px] text-slate-600 space-y-1.5 border-t border-slate-200 pt-2">
+                            <p className="flex justify-between items-center"><strong>Enroll Deadline:</strong> <span>Oct 31, 2026</span></p>
+                            <p className="flex justify-between items-center"><strong>Prize Pool:</strong> <span className="font-mono text-emerald-600 font-extrabold">$15,000</span></p>
+                            <p className="flex justify-between items-center"><strong>Format:</strong> <span>Hybrid</span></p>
+                          </div>
                         </div>
                         <button
                           onClick={async () => {
