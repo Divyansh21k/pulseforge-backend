@@ -20,6 +20,7 @@ from app.core.database import Base, engine, SessionLocal
 from app import models  # noqa: F401
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.team_repository import TeamRepository
+from app.repositories.event_repository import EventRepository
 from app.services.project_service import ProjectService
 from app.services.reviewer_service import ReviewerService
 from app.services.reviewer_assignment import ReviewerAssignmentService
@@ -121,6 +122,21 @@ def run():
         print("Bulk demo dataset already present. Skipping re-seed.")
         db.close()
         return
+
+    print("Seeding events...")
+    e_repo = EventRepository(db)
+    from datetime import datetime, timedelta
+    
+    organizer = p_repo.get_by_email("organizer@pulseforge.dev")
+    events_to_create = [
+        ("Global AI Hackathon", "AI/ML & Sustainability"),
+        ("FinTech Disrupt 2026", "Enterprise Security & Finance"),
+        ("EduTech Innovators", "Education & Accessibility"),
+    ]
+    for name, theme in events_to_create:
+        e_repo.create(name, theme, organizer.id, datetime.utcnow() - timedelta(days=1), datetime.utcnow() + timedelta(days=14))
+    print(f"  created {len(events_to_create)} events")
+
 
     print("Seeding participants...")
     participants = []
