@@ -1707,20 +1707,6 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
             )}
           </button>
 
-          {/* OFFLINE CAPABILITY SELECTOR WIDGET */}
-          <button
-            onClick={() => setIsOnline(!isOnline)}
-            className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-mono uppercase tracking-wider font-semibold border hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer ${
-              isOnline 
-                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30' 
-                : 'bg-rose-950/40 text-rose-300 border-rose-500/30'
-            }`}
-            title="Toggle offline state simulation"
-          >
-            <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`} />
-            <span>{isOnline ? 'Online Synced' : 'Offline Persist'}</span>
-          </button>
-
           {isSyncing && (
             <span className="text-[10px] text-[#C4B495] font-mono flex items-center gap-1">
               <RefreshCw className="h-3 w-3 animate-spin" /> AutoSync
@@ -2256,7 +2242,7 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
 
           {/* CORE BRAND FOOTER */}
           <footer className="mt-auto bg-[#0c2340] text-slate-400 py-10 px-6 text-center border-t border-slate-800">
-            <p className="text-[10px] font-mono font-extrabold tracking-widest text-slate-400 uppercase">HACKBRIDGE • REGISTERED FOR DELL TECHNOLOGIES ENTERPRISE SCALING</p>
+            <p className="text-[10px] font-mono font-extrabold tracking-widest text-slate-400 uppercase">HACKBRIDGE</p>
             <p className="text-[11px] text-slate-500 mt-2 font-mono">Academic Simulation Sandbox • Offline Local Storage Persistence Layer Enabled.</p>
           </footer>
         </div>
@@ -3072,7 +3058,7 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
 
       {/* RE-SET DATABASES ACTION TRIGGER WIDGET IN THE MARGINS */}
       <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500 flex-wrap gap-2 font-mono">
-        <span>© 2026 HackBridge. All rights reserved. Academic Simulation Sandbox.</span>
+        <span></span>
         <button
           onClick={resetOperationalData}
           className="underline decoration-[#C4B495] text-[#0B1E36] hover:text-[#18304F] hover:scale-105 active:scale-95 font-bold font-mono transition-all duration-200 cursor-pointer bg-[#F5F2EB] hover:bg-[#ECE6D8] border border-[#DFD7C7] px-3 py-1.5 rounded-sm"
