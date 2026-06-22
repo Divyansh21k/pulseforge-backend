@@ -513,10 +513,17 @@ export default function App() {
       if (data.overview) {
         setAnalyticsOverview(data.overview);
         setStatsCounter({
-          hackathonsCount: data.events.length || 1,
+          hackathonsCount: data.events.length || 3,
           participantsCount: data.overview.participants?.total || 0,
           timeSaved: Math.round(data.overview.projects?.evaluation_completion_rate_pct || 0),
         });
+      }
+      
+      try {
+        const rankings = await api.getRankings();
+        setLiveRankings(rankings);
+      } catch (e) {
+        console.warn("Could not sync live rankings.");
       }
       if (data.events.length > 0) {
         setHackathons(data.events.map(e => ({
@@ -608,6 +615,17 @@ export default function App() {
       if (!res.online) {
         setBackendWarning('Backend offline — log in after starting the API server.');
         return;
+      } else {
+        try {
+          const overview = await api.getAnalyticsOverview();
+          setStatsCounter({
+            hackathonsCount: 3,
+            participantsCount: overview.participants?.total || 0,
+            timeSaved: Math.round(overview.projects?.evaluation_completion_rate_pct || 0)
+          });
+        } catch (e) {
+          console.error("Failed to load public stats:", e);
+        }
       }
       if (auth.getToken()) {
         try {
