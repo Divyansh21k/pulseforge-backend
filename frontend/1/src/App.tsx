@@ -36,7 +36,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { LayoutGrid, Shield, Code } from 'lucide-react';
+import { LayoutGrid, Shield, Code, Cpu } from 'lucide-react';
 import TiltCard from './components/TiltCard';
 import ScrollReveal from './components/ScrollReveal';
 import AmbientBackgroundDecoration from './components/AmbientBackgroundDecoration';
@@ -202,6 +202,15 @@ export default function App() {
   const [liveBiasFlags, setLiveBiasFlags] = useState<api.BackendBiasFlag[]>([]);
   const [projectFeedback, setProjectFeedback] = useState<Record<string, unknown> | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  
+  const [showTeamInvite, setShowTeamInvite] = useState<boolean>(true); // Show by default for demo when participant logs in
+  const [teamInviteData, setTeamInviteData] = useState<{teamName: string, inviter: string} | null>({teamName: 'Innovators Hub', inviter: 'Sarah Connor'});
+  
+  const [isOrganizerAiLoading, setIsOrganizerAiLoading] = useState<boolean>(false);
+  const [organizerAiResult, setOrganizerAiResult] = useState<string>('');
+
+  const [isJudgeAiLoading, setIsJudgeAiLoading] = useState<boolean>(false);
+  const [judgeAiResult, setJudgeAiResult] = useState<string>('');
 
   // Registration states with detailed tech-stack & personal info fields
   const [registerForm, setRegisterForm] = useState({
@@ -302,7 +311,10 @@ export default function App() {
       const resp = await fetch('/api/gemini/analyze-dell-potential', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(auditParams)
+        body: JSON.stringify({
+          ...auditParams,
+          repoUrl: projectForm.githubUrl
+        })
       });
       const data = await resp.json();
       if (data.error) {
@@ -329,6 +341,7 @@ export default function App() {
           tagline: auditParams.tagline,
           description: auditParams.description,
           techStack: auditParams.techStack,
+          repoUrl: projectForm.githubUrl,
           targetAudience: pitchAudience
         })
       });
@@ -342,6 +355,50 @@ export default function App() {
       setPitchResult(`### ❌ Connection Error\n\nCould not connect. Error: ${e.message}`);
     } finally {
       setIsGeneratingPitch(false);
+    }
+  };
+
+  const handleOrganizerBiasAnalyze = async () => {
+    setIsOrganizerAiLoading(true);
+    setOrganizerAiResult('');
+    try {
+      const resp = await fetch('/api/gemini/analyze-bias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cohort_flags: liveBiasFlags.filter(f => f.flag_type === 'cohort').map(f => f.description),
+          reviewer_flags: liveBiasFlags.filter(f => f.flag_type === 'reviewer').map(f => f.description)
+        })
+      });
+      const data = await resp.json();
+      setOrganizerAiResult(data.analysis || 'Analysis failed.');
+    } catch (e: any) {
+      setOrganizerAiResult(`### ❌ Error\n${e.message}`);
+    } finally {
+      setIsOrganizerAiLoading(false);
+    }
+  };
+
+  const handleJudgeEvaluate = async (proj: any) => {
+    setIsJudgeAiLoading(true);
+    setJudgeAiResult('');
+    try {
+      const resp = await fetch('/api/gemini/evaluate-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: proj.title,
+          description: proj.description,
+          techStack: proj.techStack?.join(', ') || proj.techStack,
+          repoUrl: proj.githubUrl || ''
+        })
+      });
+      const data = await resp.json();
+      setJudgeAiResult(data.evaluation || 'Evaluation failed.');
+    } catch (e: any) {
+      setJudgeAiResult(`### ❌ Error\n${e.message}`);
+    } finally {
+      setIsJudgeAiLoading(false);
     }
   };
 
@@ -1958,6 +2015,33 @@ export default function App() {
       {activeRole === 'organizer' && (
         <div className="flex-1 max-w-6xl w-full mx-auto px-4 md:px-8 py-8 space-y-6 animate-fade-in">
           
+          {/* AI BIAS ALERT BANNER */}
+          {liveBiasFlags.length > 0 && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-pulse">
+              <div>
+                <h3 className="text-red-800 font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" /> 
+                  Systemic Bias Detected ({liveBiasFlags.length} Flags)
+                </h3>
+                <p className="text-red-600 text-xs mt-1 max-w-2xl">
+                  The backend normalization engine has detected {liveBiasFlags.filter(f => f.flag_type === 'reviewer').length} reviewer anomalies and {liveBiasFlags.filter(f => f.flag_type === 'cohort').length} cohort anomalies. Immediate rectification recommended.
+                </p>
+                {organizerAiResult && (
+                  <div className="mt-3 text-[11px] text-red-900 bg-red-100/70 border border-red-200 p-3 rounded shadow-sm max-w-3xl leading-relaxed">
+                    <ReactMarkdown>{organizerAiResult}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleOrganizerBiasAnalyze}
+                disabled={isOrganizerAiLoading}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase rounded shadow-sm transition-colors flex-shrink-0 cursor-pointer"
+              >
+                {isOrganizerAiLoading ? 'Analyzing Bias...' : 'Explain with AI Copilot'}
+              </button>
+            </div>
+          )}
+
           {/* FASTAPI CORE NETWORK GATE */}
           <div className="p-4 bg-[#FAF8F5] border border-[#DFD7C7] rounded-lg shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="space-y-1">
@@ -2560,6 +2644,28 @@ export default function App() {
                 </div>
               </div>
 
+              {/* AI JUDGE COPILOT */}
+              <div className="p-5 border border-indigo-100 bg-indigo-50/30 rounded-sm space-y-4 shadow-sm">
+                <span className="text-xs font-bold text-indigo-700 uppercase tracking-widest font-mono flex items-center gap-2"><Cpu className="w-4 h-4"/> AI Evaluation Copilot</span>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Generate a baseline evaluation based on the project's codebase, tech stack, and description. Use this as a foundation to speed up your grading.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleJudgeEvaluate(evaluatedProject)}
+                  disabled={isJudgeAiLoading}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-sm transition-colors shadow-sm cursor-pointer"
+                >
+                  {isJudgeAiLoading ? 'Analyzing Codebase...' : 'Auto-Evaluate Project'}
+                </button>
+                
+                {judgeAiResult && (
+                  <div className="mt-4 p-3 bg-white border border-indigo-100 rounded text-xs text-slate-700 markdown-content overflow-y-auto max-h-60 leading-relaxed">
+                    <ReactMarkdown>{judgeAiResult}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
+
             </div>
 
           </div>
@@ -2573,6 +2679,35 @@ export default function App() {
       {activeRole === 'participant' && (
         <div className="flex-1 max-w-6xl w-full mx-auto px-4 md:px-8 py-8 space-y-6">
           
+          {/* TEAM INVITATION MODAL */}
+          {showTeamInvite && teamInviteData && (
+            <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 animate-fade-in border border-slate-200">
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-lg font-black font-disp tracking-tight text-[#0c2340]">Team Invitation</h3>
+                  <button onClick={() => setShowTeamInvite(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                </div>
+                <p className="text-sm text-slate-600 mb-6">
+                  <strong>{teamInviteData.inviter}</strong> has invited you to join the team <strong className="font-mono bg-slate-100 px-1 rounded text-[#0076ce]">{teamInviteData.teamName}</strong> for the upcoming hackathon.
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setShowTeamInvite(false)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider transition-colors cursor-pointer">
+                    Decline
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowTeamInvite(false);
+                      alert(`Successfully joined ${teamInviteData.teamName}! Your workspace will now sync with team repositories.`);
+                    }} 
+                    className="px-4 py-2 bg-[#0076ce] hover:bg-[#005a9e] text-white text-xs font-bold uppercase rounded shadow-sm transition-colors cursor-pointer"
+                  >
+                    Accept Invitation
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* USER CONTEXT HEADER */}
           <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap justify-between items-center gap-4">
             <div className="space-y-1">

@@ -11,6 +11,7 @@ class AnalyzePayload(BaseModel):
     tagline: str
     description: str
     techStack: str
+    repoUrl: str = ""
 
 
 class PitchPayload(BaseModel):
@@ -18,7 +19,20 @@ class PitchPayload(BaseModel):
     tagline: str
     description: str
     techStack: str
+    repoUrl: str = ""
     targetAudience: str
+
+
+class BiasAnalyzePayload(BaseModel):
+    cohort_flags: list
+    reviewer_flags: list
+
+
+class JudgeEvaluatePayload(BaseModel):
+    title: str
+    description: str
+    techStack: str
+    repoUrl: str = ""
 
 
 @router.post("/analyze-dell-potential")
@@ -41,6 +55,7 @@ Project Title: {payload.title or "Unnamed Hacker Project"}
 Elevator Tagline: {payload.tagline or "General technology solver"}
 Detailed System Description: {payload.description or "No description provided."}
 Tech Stack Components: {payload.techStack or "Standard frontend/backend stack"}
+Repository/Code Link: {payload.repoUrl or "Not provided"}
 
 Provide a highly professional markdown feedback report structured as follows:
 - **Hackathon Win Probability Score**: Assign a percentage (0-100%) based on rigor and design.
@@ -81,5 +96,48 @@ Include professional hooks emphasizing scaling parameters, business metrics, and
     try:
         response = _model.generate_content(prompt)
         return {"script": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze-bias")
+def analyze_bias(payload: BiasAnalyzePayload):
+    if not _model:
+        return {
+            "analysis": "### ⚠️ Emulated Bias Analysis\n\nThe AI detects that Reviewer 7 is grading 2.8 standard deviations harsher than the cohort mean. This is likely due to mismatched domain expertise or systemic strictness. We recommend enabling normalization immediately."
+        }
+
+    prompt = f"""You are the Chief Data Scientist for a hackathon. Analyze the following evaluation bias flags and explain them simply to the event organizer, suggesting how normalization will fix it.
+    
+COHORT FLAGS: {payload.cohort_flags}
+REVIEWER FLAGS: {payload.reviewer_flags}
+
+Provide a 2-paragraph summary. Do not use generic filler words."""
+    try:
+        response = _model.generate_content(prompt)
+        return {"analysis": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/evaluate-project")
+def evaluate_project(payload: JudgeEvaluatePayload):
+    if not _model:
+        return {
+            "evaluation": "### ⚠️ Emulated Judge AI Copilot\n\n**Suggested Scores:**\n- Innovation: 8.5\n- Technical: 7.0\n- Impact: 8.0\n- Presentation: 7.5\n\n**Reasoning:** The stack is solid but the repository lacks a clear README."
+        }
+
+    prompt = f"""You are an AI Copilot assisting a Hackathon Judge. Analyze this project based on its technical stack and description.
+    
+PROJECT DETAILS:
+Title: {payload.title}
+Description: {payload.description}
+Tech Stack: {payload.techStack}
+Repo URL: {payload.repoUrl}
+
+Suggest scores (1-10) for Innovation, Technical Execution, Impact, and Presentation, followed by a concise 3-sentence justification. Be critical and realistic based on the provided stack."""
+    try:
+        response = _model.generate_content(prompt)
+        return {"evaluation": response.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
