@@ -203,8 +203,9 @@ export default function App() {
   const [projectFeedback, setProjectFeedback] = useState<Record<string, unknown> | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   
-  const [showTeamInvite, setShowTeamInvite] = useState<boolean>(true); // Show by default for demo when participant logs in
-  const [teamInviteData, setTeamInviteData] = useState<{teamName: string, inviter: string} | null>({teamName: 'Innovators Hub', inviter: 'Sarah Connor'});
+  const [showTeamInvite, setShowTeamInvite] = useState<boolean>(false);
+  const [teamInviteData, setTeamInviteData] = useState<{teamName: string, inviter: string, projectId?: string} | null>(null);
+  const [pendingInvites, setPendingInvites] = useState<{to: string, inviter: string, teamName: string, projectId: string}[]>([]);
   
   const [isOrganizerAiLoading, setIsOrganizerAiLoading] = useState<boolean>(false);
   const [organizerAiResult, setOrganizerAiResult] = useState<string>('');
@@ -660,6 +661,7 @@ export default function App() {
       setBiasAlerts(loadState('hack_bias_alerts', []));
       setAuditTrails(loadState('hack_audit_trails', []));
       setCommunications(loadState('hack_communications', []));
+      setPendingInvites(loadState('hack_pending_invites', []));
       setHackathons(loadState('hack_hackathons', INITIAL_HACKATHONS));
     }
   }, []);
@@ -1266,66 +1268,53 @@ export default function App() {
   const activeParticipantUser = participants.find(p => p.email === currentParticipantEmail) || participants[0];
   const activeReviewerUser = reviewers.find(r => r.email === currentReviewerEmail) || reviewers[0];
 
+  useEffect(() => {
+    if (activeRole === 'participant' && activeParticipantUser) {
+      const invite = pendingInvites.find(i => i.to === activeParticipantUser.name);
+      if (invite) {
+        setTeamInviteData(invite);
+        setShowTeamInvite(true);
+      }
+    }
+  }, [activeRole, activeParticipantUser, pendingInvites]);
+
   // PARTICIPANT COMPATIBLE TEAM MAPPINGS ENGINE (FEATURE #3 IMPLEMENTATION)
   const handleInviteToTeam = (partnerId: string) => {
     const partner = participants.find(p => p.id === partnerId);
     if (!partner) return;
 
-    // Mutate state to append innovator in user team members
     const activeUserProj = projects.find(p => p.submittedBy === activeParticipantUser?.id);
     
-    if (activeUserProj) {
-      if (activeUserProj.teamMembers.includes(partner.name)) {
-        alert(`${partner.name} is already registered on your dynamic team array.`);
-        return;
-      }
-      
-      const updatedMembers = [...activeUserProj.teamMembers, partner.name];
-      const updatedProjs = projects.map(p => {
-        if (p.id === activeUserProj.id) {
-          return { ...p, teamMembers: updatedMembers };
-        }
-        return p;
-      });
-      setProjects(updatedProjs);
-      syncStorage('hack_projects', updatedProjs);
-      
-      writeAuditRecord(
-        `Team invitation finalized`,
-        'Participant',
-        `User successfully invited ${partner.name} to join "${activeUserProj.title}". Current membersCount: ${updatedMembers.length}`,
-        'Matching'
-      );
-      
-      alert(`Teammate added! ${partner.name} is now incorporated into your live team list.`);
-    } else {
-      // Create a project scaffolding to embed team immediately
-      const defaultTitle = `${activeParticipantUser?.name || 'My'}'s Team Space`;
-      const newProjScaffold: Project = {
-        id: `proj-${Date.now()}`,
-        title: defaultTitle,
-        tagline: 'Forming technology co-founders hub',
-        description: 'New innovation track targeting cloud scale and sustainability challenges.',
-        techStack: [...(activeParticipantUser?.skills || []), ...partner.skills],
-        institution: activeParticipantUser?.institution || 'Dell Innovation Office',
-        teamMembers: [activeParticipantUser?.name || 'Hacker Soloist', partner.name],
-        submittedBy: activeParticipantUser?.id || 'p-1'
-      };
-      
-      const newProjs = [newProjScaffold, ...projects];
-      setProjects(newProjs);
-      syncStorage('hack_projects', newProjs);
-      setSelectedProjectId(newProjScaffold.id);
-      
-      writeAuditRecord(
-        'New Innovation Team Portfolios Initiated',
-        'Participant',
-        `Created team "${defaultTitle}" with matched partner: ${partner.name}`,
-        'Matching'
-      );
-      
-      alert(`Innovation team formed! ${partner.name} has joined you. Let's build together.`);
+    if (!activeUserProj) {
+      alert("You need to submit a project first before inviting teammates!");
+      return;
     }
+    
+    if (activeUserProj.teamMembers.includes(partner.name)) {
+      alert(`${partner.name} is already registered on your team.`);
+      return;
+    }
+    
+    // Simulate sending an invite instead of adding them immediately
+    const newInvite = {
+      to: partner.name,
+      inviter: activeParticipantUser?.name || 'Hacker',
+      teamName: activeUserProj.title,
+      projectId: activeUserProj.id
+    };
+    
+    const updatedInvites = [...pendingInvites, newInvite];
+    setPendingInvites(updatedInvites);
+    syncStorage('hack_pending_invites', updatedInvites);
+    
+    writeAuditRecord(
+      `Team invitation sent`,
+      'Participant',
+      `User successfully invited ${partner.name} to join "${activeUserProj.title}".`,
+      'Matching'
+    );
+    
+    alert(`An invitation has been sent to ${partner.name}! They will be added to your team once they accept it.`);
   };
 
   // Find users who are NOT the current participant and prioritize those with complementary / compatible stack alignments
@@ -2083,8 +2072,8 @@ export default function App() {
                 <span className="px-2 py-0.5 bg-[#0076ce]/10 text-[#0076ce] rounded-sm text-[10px] font-mono font-extrabold uppercase">HOST DESK</span>
                 <span className="text-slate-400 text-xs">| {authUser?.full_name || 'Organizer'}</span>
               </div>
-              <h2 className="text-2xl font-black font-disp tracking-tight">Welcome to the Control Cockpit</h2>
-              <p className="text-xs text-slate-500">Coordinate participant matchmaking, duplication arrays, and impartial scoring matrices safely.</p>
+              <h2 className="text-2xl font-black font-disp tracking-tight">Hackathon Command Center</h2>
+              <p className="text-xs text-slate-500">Manage events, oversee team formations, and ensure unbiased evaluations with real-time analytics.</p>
             </div>
 
             {/* DYNAMIC MULTI-HACKATHON CATEGORY TABS - FEATURE #2: 3 OPTIONS */}
@@ -2443,8 +2432,8 @@ export default function App() {
                 <span className="px-2 py-0.5 bg-[#0076ce]/10 text-[#0076ce] rounded-sm text-[10px] font-mono font-extrabold uppercase">JURY SEAT</span>
                 <span className="text-slate-400 text-xs">| {activeReviewerUser?.name || 'Faculty Judge'}</span>
               </div>
-              <h2 className="text-2xl font-black font-disp tracking-tight">Active Evaluation Workbench</h2>
-              <p className="text-xs text-slate-500">Provide impartial scores based on innovation, design, and continuous engineering metrics.</p>
+              <h2 className="text-2xl font-black font-disp tracking-tight">Judging & Evaluation Portal</h2>
+              <p className="text-xs text-slate-500">Review submissions, provide critical feedback, and ensure fair scoring using our AI Copilot and bias detection.</p>
             </div>
             
             <div className="p-2 bg-white rounded border border-slate-200 flex flex-col gap-1.5 min-w-[220px] shadow-sm">
@@ -2691,12 +2680,33 @@ export default function App() {
                   <strong>{teamInviteData.inviter}</strong> has invited you to join the team <strong className="font-mono bg-slate-100 px-1 rounded text-[#0076ce]">{teamInviteData.teamName}</strong> for the upcoming hackathon.
                 </p>
                 <div className="flex gap-3 justify-end">
-                  <button onClick={() => setShowTeamInvite(false)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider transition-colors cursor-pointer">
+                  <button onClick={() => {
+                    setShowTeamInvite(false);
+                    // Remove from pending without adding
+                    const remaining = pendingInvites.filter(i => i.to !== activeParticipantUser?.name);
+                    setPendingInvites(remaining);
+                    syncStorage('hack_pending_invites', remaining);
+                  }} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider transition-colors cursor-pointer">
                     Decline
                   </button>
                   <button 
                     onClick={() => {
                       setShowTeamInvite(false);
+                      // Add them to the project
+                      const projId = teamInviteData.projectId;
+                      const projToUpdate = projects.find(p => p.id === projId);
+                      if (projToUpdate) {
+                        const updatedMembers = [...projToUpdate.teamMembers, activeParticipantUser?.name || 'Hacker'];
+                        const updatedProjs = projects.map(p => p.id === projId ? { ...p, teamMembers: updatedMembers } : p);
+                        setProjects(updatedProjs);
+                        syncStorage('hack_projects', updatedProjs);
+                      }
+                      
+                      // Remove from pending
+                      const remaining = pendingInvites.filter(i => i.to !== activeParticipantUser?.name);
+                      setPendingInvites(remaining);
+                      syncStorage('hack_pending_invites', remaining);
+                      
                       alert(`Successfully joined ${teamInviteData.teamName}! Your workspace will now sync with team repositories.`);
                     }} 
                     className="px-4 py-2 bg-[#0076ce] hover:bg-[#005a9e] text-white text-xs font-bold uppercase rounded shadow-sm transition-colors cursor-pointer"
@@ -2715,8 +2725,8 @@ export default function App() {
                 <span className="px-2 py-0.5 bg-[#0a7a4c]/10 text-[#0a7a4c] rounded-sm text-[10px] font-mono font-extrabold uppercase">INNOVATOR</span>
                 <span className="text-slate-400 text-xs">| {activeParticipantUser?.name || 'Academic Programmer'} ({activeParticipantUser?.institution})</span>
               </div>
-              <h2 className="text-2xl font-black font-disp tracking-tight">Hacker Workspace Control Panel</h2>
-              <p className="text-xs text-slate-500">Design enterprise-scale systems, assemble co-founders, and optimize database telemetry files.</p>
+              <h2 className="text-2xl font-black font-disp tracking-tight">Hacker Workspace</h2>
+              <p className="text-xs text-slate-500">Build groundbreaking projects, collaborate with your team, and leverage AI to refine your technical pitch.</p>
             </div>
 
             {/* DYNAMIC HACKATHON FILTER FOR PARTICIPANTS - FEATURE #2 */}
