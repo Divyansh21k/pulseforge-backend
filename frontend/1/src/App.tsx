@@ -160,8 +160,8 @@ export default function App() {
   const [hackathonTypeFilter, setHackathonTypeFilter] = useState<'active' | 'upcoming' | 'past'>('active');
 
   // Currently logged-in profile contexts
-  const [currentParticipantEmail, setCurrentParticipantEmail] = useState<string>('alice.vance@mit.edu');
-  const [currentReviewerEmail, setCurrentReviewerEmail] = useState<string>('helen.vance@mit.edu');
+  const [currentParticipantEmail, setCurrentParticipantEmail] = useState<string>('participant@pulseforge.dev');
+  const [currentReviewerEmail, setCurrentReviewerEmail] = useState<string>('reviewer@pulseforge.dev');
 
   // Offline Simulator Variables
 
