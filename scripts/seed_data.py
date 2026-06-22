@@ -26,6 +26,8 @@ from app.services.reviewer_assignment import ReviewerAssignmentService
 from app.services.evaluation_service import EvaluationService
 from app.services.bias_detection import ScoreNormalizationService, BiasDetectionService
 
+from app.utils.security import hash_password
+
 random.seed(42)
 
 FIRST_NAMES = [
@@ -87,6 +89,36 @@ def run():
     t_repo = TeamRepository(db)
     proj_service = ProjectService(db)
     rev_service = ReviewerService(db)
+
+    print("Creating demo auth accounts...")
+    demo_users = [
+        ("Demo Organizer", "organizer@pulseforge.dev", "organizer", "PulseForge HQ"),
+        ("Demo Reviewer", "reviewer@pulseforge.dev", "reviewer", "MIT"),
+        ("Demo Participant", "participant@pulseforge.dev", "participant", "Stanford"),
+    ]
+    for name, email, role, org in demo_users:
+        if not p_repo.get_by_email(email):
+            user = p_repo.create(name, email, None, org, "python, react, machine learning")
+            user.role = role
+            user.hashed_password = hash_password("demo1234")
+            db.commit()
+            if role == "reviewer":
+                try:
+                    rev_service.create_reviewer(
+                        name, email, organization=org,
+                        expertise_text="machine learning, python, data science",
+                        max_workload=4, participant_id=user.id,
+                    )
+                except ValueError:
+                    pass
+    print("  demo login: organizer@pulseforge.dev / demo1234 (organizer)")
+    print("  demo login: reviewer@pulseforge.dev / demo1234 (reviewer)")
+    print("  demo login: participant@pulseforge.dev / demo1234 (participant)")
+
+    if p_repo.get_by_email("participant1@hackathon.dev"):
+        print("Bulk demo dataset already present. Skipping re-seed.")
+        db.close()
+        return
 
     print("Seeding participants...")
     participants = []

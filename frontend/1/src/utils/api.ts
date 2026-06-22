@@ -1,9 +1,8 @@
 /**
- * PulseForge Backend API Core Integration Bridge
- * Connects the React client to Divyansh21k/pulseforge-backend.
- * Includes complete fallback patterns to local mock/simulated states
- * with string-to-integer ID wrappers.
+ * PulseForge Backend API — JWT-authenticated integration layer.
  */
+
+import { authHeaders, clearAuth, getToken, setStoredUser, setToken, AuthUser } from './auth';
 
 export const getBackendUrl = (): string => {
   return localStorage.getItem('PULSEFORGE_BACKEND_URL') || 'http://localhost:8000';
@@ -21,42 +20,22 @@ export const setBackendActiveState = (active: boolean) => {
   localStorage.setItem('PULSEFORGE_BACKEND_ACTIVE', active ? 'true' : 'false');
 };
 
-/**
- * Checks if the backend FastAPI server is online on the chosen URL.
- */
 export async function testBackendHealth(): Promise<{ online: boolean; url: string }> {
   const url = getBackendUrl();
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
-    const res = await fetch(`${url}/api/analytics/overview`, {
-      method: 'GET',
-      signal: controller.signal
-    });
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`${url}/health`, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
-    const online = res.status < 500;
+    const online = res.ok;
     setBackendActiveState(online);
     return { online, url };
-  } catch (err) {
-    try {
-      // Fallback ping to root / docs
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(url, { method: 'GET', signal: controller.signal });
-      clearTimeout(timeoutId);
-      const online = res.status < 500;
-      setBackendActiveState(online);
-      return { online, url };
-    } catch (_) {
-      setBackendActiveState(false);
-      return { online: false, url };
-    }
+  } catch {
+    setBackendActiveState(false);
+    return { online: false, url };
   }
 }
 
-/**
- * Standard utility to parse string-based IDs (like 'p-1' or 'proj-12') into backend integers.
- */
 export const toBackendId = (id: string | number): number => {
   if (typeof id === 'number') return id;
   const match = id.replace(/^[a-zA-Z-]+/, '');
@@ -64,44 +43,125 @@ export const toBackendId = (id: string | number): number => {
   return isNaN(parsed) ? 1 : parsed;
 };
 
-/**
- * Standard utility to wrap backend integers back to standard frontend styled string IDs.
- */
 export const toFrontendId = (prefix: string, id: number | string): string => {
   const s = id.toString();
   if (s.startsWith(prefix)) return s;
   return `${prefix}-${s}`;
 };
 
-/**
- * Helper to perform fetch requests that automatically fall back or throw based on active state.
- */
-async function apiFetch<T>(path: string, options?: RequestInit, fallbackValue?: T): Promise<T> {
-  const url = `${getBackendUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options?.headers || {}),
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`API returned HTTP ${res.status}`);
-    }
-    return await res.json() as T;
-  } catch (err) {
-    if (fallbackValue !== undefined) {
-      console.warn(`[PulseForge Core] Failed connecting to ${url}. Falling back to client-side simulator.`);
-      return fallbackValue;
-    }
-    throw err;
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
   }
 }
 
-/* ──────────────────────────────────────────────────────────
-   0. PARTICIPANTS API WRAPPERS
-   ────────────────────────────────────────────────────────── */
+async function apiFetch<T>(path: string, options?: RequestInit, requireAuth = true): Promise<T> {
+  const url = `${getBackendUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(requireAuth ? authHeaders() : {}),
+    ...(options?.headers as Record<string, string> || {}),
+  };
+
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && requireAuth) {
+    clearAuth();
+    throw new ApiError('Session expired — please log in again', 401);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = body.detail || detail;
+    } catch { /* ignore */ }
+    throw new ApiError(String(detail), res.status);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+/* ── Auth ── */
+export interface TokenResponse {
+  access_token: string;
+  role: string;
+  participant_id: number;
+}
+
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const data = await apiFetch<TokenResponse>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  }, false);
+  setToken(data.access_token);
+  const profile = await getMe();
+  setStoredUser(profile);
+  return profile;
+}
+
+export async function register(payload: {
+  full_name: string;
+  email: string;
+  password: string;
+  organization?: string;
+  role: 'participant' | 'reviewer';
+  raw_skills_text?: string;
+  expertise_text?: string;
+}): Promise<AuthUser> {
+  const data = await apiFetch<TokenResponse>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, false);
+  setToken(data.access_token);
+  const profile = await getMe();
+  setStoredUser(profile);
+  return profile;
+}
+
+export async function getMe(): Promise<AuthUser> {
+  const profile = await apiFetch<AuthUser>('/api/auth/me');
+  setStoredUser(profile);
+  return profile;
+}
+
+export function logout(): void {
+  clearAuth();
+}
+
+/* ── Demo ── */
+export async function getDemoStatus(): Promise<{
+  database_empty: boolean;
+  participant_count: number;
+  demo_credentials: Record<string, { email: string; password: string }>;
+}> {
+  return apiFetch('/api/demo/status', { method: 'GET' }, false);
+}
+
+export async function seedDemoDataset(): Promise<{ seeded: boolean; message: string; participant_count?: number }> {
+  return apiFetch('/api/demo/seed', { method: 'POST' }, false);
+}
+
+/* ── Events ── */
+export interface BackendEvent {
+  id: number;
+  name: string;
+  theme?: string;
+  status: string;
+}
+
+export async function listEvents(): Promise<BackendEvent[]> {
+  return apiFetch('api/events/', { method: 'GET' });
+}
+
+export async function createEvent(payload: {
+  name: string;
+  theme?: string;
+}): Promise<BackendEvent & { organizer_id: number }> {
+  return apiFetch('api/events/', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+/* ── Participants ── */
 export interface BackendParticipant {
   id: number;
   full_name: string;
@@ -117,200 +177,134 @@ export async function createParticipant(payload: {
   phone?: string;
   organization: string;
   raw_skills_text: string;
-}, fallback?: BackendParticipant): Promise<BackendParticipant> {
-  return apiFetch(
-    'api/participants/',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        full_name: payload.full_name,
-        email: payload.email,
-        phone: payload.phone || '',
-        organization: payload.organization,
-        raw_skills_text: payload.raw_skills_text
-      }),
-    },
-    fallback
-  );
+}): Promise<BackendParticipant> {
+  return apiFetch('api/participants/', { method: 'POST', body: JSON.stringify(payload) });
 }
 
-export async function listParticipants(fallback?: BackendParticipant[]): Promise<BackendParticipant[]> {
-  return apiFetch('api/participants/', { method: 'GET' }, fallback);
+export async function listParticipants(): Promise<BackendParticipant[]> {
+  return apiFetch('api/participants/', { method: 'GET' });
 }
 
-export async function getParticipant(participantId: string | number, fallback?: BackendParticipant): Promise<BackendParticipant> {
-  return apiFetch(`api/participants/${toBackendId(participantId)}`, { method: 'GET' }, fallback);
+export async function getParticipant(participantId: string | number): Promise<BackendParticipant> {
+  return apiFetch(`api/participants/${toBackendId(participantId)}`, { method: 'GET' });
 }
 
-/* ──────────────────────────────────────────────────────────
-   1. DUPLICATE DETECTION API WRAPPERS
-   ────────────────────────────────────────────────────────── */
-export interface BackendDuplicateMatch {
-  matched_participant_id: number;
-  match_type: string;
-  confidence_score: number;
-}
-
-export interface BackendDuplicateFlag {
-  id: number;
-  matched_participant_id: number;
-  match_type: string;
-  confidence_score: number;
-  status: string;
-  created_at: string;
-}
-
-export async function checkDuplicates(participantId: string | number, fallback?: any): Promise<{
+/* ── Duplicates ── */
+export async function checkDuplicates(participantId: string | number): Promise<{
   participant_id: number;
   matches_found: number;
-  matches: BackendDuplicateMatch[];
+  matches: Array<{ matched_participant_id: number; match_type: string; confidence_score: number }>;
 }> {
-  return apiFetch(
-    `api/duplicates/check/${toBackendId(participantId)}`,
-    { method: 'POST' },
-    fallback
-  );
+  return apiFetch(`api/duplicates/check/${toBackendId(participantId)}`, { method: 'POST' });
 }
 
-export async function getExistingDuplicateFlags(participantId: string | number, fallback?: any): Promise<BackendDuplicateFlag[]> {
-  return apiFetch(
-    `api/duplicates/flags/${toBackendId(participantId)}`,
-    { method: 'GET' },
-    fallback
-  );
-}
-
-/* ──────────────────────────────────────────────────────────
-   2. SKILLS EXTRACTION API WRAPPERS
-   ────────────────────────────────────────────────────────── */
-export interface BackendSkillLink {
-  skill_id: number;
-  skill_name: string;
-  source: string;
-  confidence: number;
-}
-
-export async function previewExtraction(rawText: string, fallback?: string[]): Promise<{ normalized_skills: string[] }> {
-  return apiFetch(
-    'api/skills/extract',
-    {
-      method: 'POST',
-      body: JSON.stringify({ raw_text: rawText }),
-    },
-    fallback ? { normalized_skills: fallback } : undefined
-  );
-}
-
-export async function extractAndSaveSkills(participantId: string | number, fallback?: string[]): Promise<{
-  participant_id: number;
-  normalized_skills: string[];
+export async function checkDuplicatesRaw(payload: {
+  full_name: string;
+  email: string;
+  organization?: string;
+}): Promise<{
+  duplicateDetected: boolean;
+  confidenceScore: number;
+  matchedParticipantId: string | null;
+  reason: string;
 }> {
-  return apiFetch(
-    `api/skills/extract/${toBackendId(participantId)}`,
-    { method: 'POST' },
-    fallback ? { participant_id: toBackendId(participantId), normalized_skills: fallback } : undefined
-  );
+  return apiFetch('api/duplicates/check-raw', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }
 
-export async function getParticipantSkills(participantId: string | number, fallback?: BackendSkillLink[]): Promise<BackendSkillLink[]> {
-  return apiFetch(
-    `api/skills/${toBackendId(participantId)}`,
-    { method: 'GET' },
-    fallback
-  );
+export async function getExistingDuplicateFlags(participantId: string | number) {
+  return apiFetch(`api/duplicates/flags/${toBackendId(participantId)}`, { method: 'GET' });
 }
 
-/* ──────────────────────────────────────────────────────────
-   3. TEAM MAPPING & AUTO FORMATION API WRAPPERS
-   ────────────────────────────────────────────────────────── */
-export interface BackendTeam {
-  id: number;
-  name: string;
-  member_count: number;
+/* ── Skills ── */
+export async function previewExtraction(rawText: string): Promise<{ normalized_skills: string[] }> {
+  return apiFetch('api/skills/extract', {
+    method: 'POST',
+    body: JSON.stringify({ raw_text: rawText }),
+  }, false);
 }
 
-export interface BackendTeamDetails {
-  id: number;
-  name: string;
-  members: Array<{
-    participant_id: number;
-    full_name: string;
-    role: string;
-  }>;
-  created_at: string;
+export async function extractAndSaveSkills(participantId: string | number) {
+  return apiFetch(`api/skills/extract/${toBackendId(participantId)}`, { method: 'POST' });
 }
 
+export async function getParticipantSkills(participantId: string | number) {
+  return apiFetch(`api/skills/${toBackendId(participantId)}`, { method: 'GET' });
+}
+
+/* ── Teams ── */
+export interface BackendTeam { id: number; name: string; member_count: number }
 export interface BackendTeamComposition {
   team_id: number;
-  diversity_index: number;
+  skill_diversity_score: number;
   skill_coverage_pct: number;
   uniqueness_score: number;
   strength_assessment: string;
-  gaps_detected: string[];
+  coverage_gaps: string[];
 }
 
-export async function createTeam(name: string, memberIds: Array<string | number>, fallback?: any): Promise<BackendTeamDetails> {
-  const ids = memberIds.map(toBackendId);
-  return apiFetch(
-    'api/teams/',
-    {
-      method: 'POST',
-      body: JSON.stringify({ name, member_ids: ids }),
-    },
-    fallback
-  );
+export async function createTeam(name: string, memberIds: Array<string | number>) {
+  return apiFetch('api/teams/', {
+    method: 'POST',
+    body: JSON.stringify({ name, member_ids: memberIds.map(toBackendId) }),
+  });
 }
 
-export async function listTeams(fallback?: BackendTeam[]): Promise<BackendTeam[]> {
-  return apiFetch('api/teams/', { method: 'GET' }, fallback);
+export async function listTeams(): Promise<BackendTeam[]> {
+  return apiFetch('api/teams/', { method: 'GET' });
 }
 
-export async function getTeam(teamId: string | number, fallback?: BackendTeamDetails): Promise<BackendTeamDetails> {
-  return apiFetch(`api/teams/${toBackendId(teamId)}`, { method: 'GET' }, fallback);
+export async function getTeam(teamId: string | number) {
+  return apiFetch(`api/teams/${toBackendId(teamId)}`, { method: 'GET' });
 }
 
-export async function getTeamComposition(teamId: string | number, fallback?: BackendTeamComposition): Promise<BackendTeamComposition> {
-  return apiFetch(`api/teams/${toBackendId(teamId)}/composition`, { method: 'GET' }, fallback);
+export async function getTeamComposition(teamId: string | number): Promise<BackendTeamComposition> {
+  return apiFetch(`api/teams/${toBackendId(teamId)}/composition`, { method: 'GET' });
 }
 
-export async function autoFormTeams(teamSize: number, fallback?: any): Promise<{
-  teams_formed: number;
-  teams: Array<{
-    name: string;
-    member_ids: number[];
-  }>;
-}> {
-  return apiFetch(
-    'api/teams/auto-form',
-    {
-      method: 'POST',
-      body: JSON.stringify({ team_size: teamSize }),
-    },
-    fallback
-  );
+export async function autoFormTeams(teamSize: number): Promise<{ teams_formed: number; teams: Array<{ name: string; member_ids: number[] }> }> {
+  return apiFetch('api/teams/auto-form', {
+    method: 'POST',
+    body: JSON.stringify({ team_size: teamSize }),
+  });
 }
 
-/* ──────────────────────────────────────────────────────────
-   4. EVALUATION WORKFLOW API WRAPPERS
-   ────────────────────────────────────────────────────────── */
-export interface BackendEvaluation {
-  id: number;
-  project_id: number;
-  reviewer_id: number;
-  raw_score: number;
-  created_at: string;
-}
-
-export interface BackendEvaluationDetails {
-  id: number;
-  reviewer_id: number;
+/* ── Evaluations ── */
+export async function submitEvaluation(payload: {
+  project_id: string | number;
+  reviewer_id: string | number;
   innovation_score: number;
   technical_score: number;
   impact_score: number;
   presentation_score: number;
-  raw_score: number;
-  normalized_score: number;
   feedback_text: string;
+}) {
+  return apiFetch('api/evaluations/', {
+    method: 'POST',
+    body: JSON.stringify({
+      project_id: toBackendId(payload.project_id),
+      reviewer_id: toBackendId(payload.reviewer_id),
+      innovation_score: payload.innovation_score,
+      technical_score: payload.technical_score,
+      impact_score: payload.impact_score,
+      presentation_score: payload.presentation_score,
+      feedback_text: payload.feedback_text,
+    }),
+  });
+}
+
+export async function listEvaluationsForProject(projectId: string | number) {
+  return apiFetch(`api/evaluations/project/${toBackendId(projectId)}`, { method: 'GET' });
+}
+
+export async function normalizeScores(): Promise<{ evaluations_normalized: number }> {
+  return apiFetch('api/evaluations/normalize', { method: 'POST' });
+}
+
+export async function runBiasScan(): Promise<{ cohort_flags: unknown[]; reviewer_flags: unknown[]; total_flags: number }> {
+  return apiFetch('api/evaluations/bias-scan', { method: 'POST' });
 }
 
 export interface BackendBiasFlag {
@@ -326,57 +320,12 @@ export interface BackendBiasFlag {
   created_at: string;
 }
 
-export async function submitEvaluation(payload: {
-  project_id: string | number;
-  reviewer_id: string | number;
-  innovation_score: number;
-  technical_score: number;
-  impact_score: number;
-  presentation_score: number;
-  feedback_text: string;
-}, fallback?: any): Promise<BackendEvaluation> {
-  return apiFetch(
-    'api/evaluations/',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        project_id: toBackendId(payload.project_id),
-        reviewer_id: toBackendId(payload.reviewer_id),
-        innovation_score: payload.innovation_score,
-        technical_score: payload.technical_score,
-        impact_score: payload.impact_score,
-        presentation_score: payload.presentation_score,
-        feedback_text: payload.feedback_text,
-      }),
-    },
-    fallback
-  );
-}
-
-export async function listEvaluationsForProject(projectId: string | number, fallback?: BackendEvaluationDetails[]): Promise<BackendEvaluationDetails[]> {
-  return apiFetch(`api/evaluations/project/${toBackendId(projectId)}`, { method: 'GET' }, fallback);
-}
-
-export async function normalizeScores(fallback?: any): Promise<{ evaluations_normalized: number }> {
-  return apiFetch('api/evaluations/normalize', { method: 'POST' }, fallback);
-}
-
-export async function runBiasScan(fallback?: any): Promise<{
-  cohort_flags: any[];
-  reviewer_flags: any[];
-  total_flags: number;
-}> {
-  return apiFetch('api/evaluations/bias-scan', { method: 'POST' }, fallback);
-}
-
-export async function listBiasFlags(statusFilter?: string, fallback?: BackendBiasFlag[]): Promise<BackendBiasFlag[]> {
+export async function listBiasFlags(statusFilter?: string): Promise<BackendBiasFlag[]> {
   const query = statusFilter ? `?status_filter=${statusFilter}` : '';
-  return apiFetch(`api/evaluations/bias-flags${query}`, { method: 'GET' }, fallback);
+  return apiFetch(`api/evaluations/bias-flags${query}`, { method: 'GET' });
 }
 
-/* ──────────────────────────────────────────────────────────
-   5. RESULTS PROCESSING API WRAPPERS
-   ────────────────────────────────────────────────────────── */
+/* ── Results ── */
 export interface BackendRankedProject {
   project_id: number;
   title: string;
@@ -387,29 +336,16 @@ export interface BackendRankedProject {
   rank: number;
 }
 
-export async function getRankings(fallback?: BackendRankedProject[]): Promise<BackendRankedProject[]> {
-  const data = await apiFetch<{ rankings: BackendRankedProject[] }>(
-    'api/results/rankings',
-    { method: 'GET' },
-    fallback ? { rankings: fallback } : undefined
-  );
+export async function getRankings(): Promise<BackendRankedProject[]> {
+  const data = await apiFetch<{ rankings: BackendRankedProject[] }>('api/results/rankings', { method: 'GET' });
   return data?.rankings || [];
 }
 
-export async function getProjectFeedback(projectId: string | number, fallback?: any): Promise<{
-  project_id: number;
-  innovation: { average: number; comments: string[] };
-  technical: { average: number; comments: string[] };
-  impact: { average: number; comments: string[] };
-  presentation: { average: number; comments: string[] };
-  overall_feedback: string[];
-}> {
-  return apiFetch(`api/results/feedback/${toBackendId(projectId)}`, { method: 'GET' }, fallback);
+export async function getProjectFeedback(projectId: string | number) {
+  return apiFetch(`api/results/feedback/${toBackendId(projectId)}`, { method: 'GET' });
 }
 
-/* ──────────────────────────────────────────────────────────
-   6. PROJECTS API WRAPPERS
-   ────────────────────────────────────────────────────────── */
+/* ── Projects ── */
 export interface BackendProject {
   id: number;
   team_id: number;
@@ -428,35 +364,22 @@ export async function submitProject(payload: {
   tech_stack_text: string;
   repo_url: string;
   demo_url: string;
-}, fallback?: BackendProject): Promise<BackendProject> {
-  return apiFetch(
-    'api/projects/',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        team_id: toBackendId(payload.team_id),
-        title: payload.title,
-        description: payload.description,
-        tech_stack_text: payload.tech_stack_text,
-        repo_url: payload.repo_url,
-        demo_url: payload.demo_url,
-      }),
-    },
-    fallback
-  );
+}): Promise<BackendProject> {
+  return apiFetch('api/projects/', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, team_id: toBackendId(payload.team_id) }),
+  });
 }
 
-export async function listProjects(fallback?: BackendProject[]): Promise<BackendProject[]> {
-  return apiFetch('api/projects/', { method: 'GET' }, fallback);
+export async function listProjects(): Promise<BackendProject[]> {
+  return apiFetch('api/projects/', { method: 'GET' });
 }
 
-export async function getProject(projectId: string | number, fallback?: BackendProject): Promise<BackendProject> {
-  return apiFetch(`api/projects/${toBackendId(projectId)}`, { method: 'GET' }, fallback);
+export async function getProject(projectId: string | number): Promise<BackendProject> {
+  return apiFetch(`api/projects/${toBackendId(projectId)}`, { method: 'GET' });
 }
 
-/* ──────────────────────────────────────────────────────────
-   7. REVIEWER INTELLIGENCE API WRAPPERS
-   ────────────────────────────────────────────────────────── */
+/* ── Reviewers ── */
 export interface BackendReviewer {
   id: number;
   full_name: string;
@@ -474,141 +397,129 @@ export interface BackendReviewerWorkload {
   utilization_pct: number;
 }
 
-export interface BackendReviewerAssignment {
-  id: number;
-  reviewer_id: number;
-  reviewer_name: string;
-  expertise_score: number;
-  workload_score: number;
-  conflict_score: number;
-  diversity_score: number;
-  total_score: number;
-  status: string;
-}
-
 export async function registerReviewer(payload: {
   full_name: string;
   email: string;
   organization: string;
   expertise_text: string;
   max_workload: number;
-  participant_id?: string | number | null;
-}, fallback?: BackendReviewer): Promise<BackendReviewer> {
-  return apiFetch(
-    'api/reviewers/',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        full_name: payload.full_name,
-        email: payload.email,
-        organization: payload.organization,
-        expertise_text: payload.expertise_text,
-        max_workload: payload.max_workload,
-        participant_id: payload.participant_id ? toBackendId(payload.participant_id) : null,
-      }),
-    },
-    fallback
-  );
+}) {
+  return apiFetch('api/reviewers/', { method: 'POST', body: JSON.stringify(payload) });
 }
 
-export async function listReviewers(fallback?: BackendReviewer[]): Promise<BackendReviewer[]> {
-  return apiFetch('api/reviewers/', { method: 'GET' }, fallback);
+export async function listReviewers(): Promise<BackendReviewer[]> {
+  return apiFetch('api/reviewers/', { method: 'GET' });
 }
 
-export async function getReviewer(reviewerId: string | number, fallback?: BackendReviewer): Promise<BackendReviewer> {
-  return apiFetch(`api/reviewers/${toBackendId(reviewerId)}`, { method: 'GET' }, fallback);
+export async function getReviewerWorkload(reviewerId: string | number): Promise<BackendReviewerWorkload> {
+  return apiFetch(`api/reviewers/${toBackendId(reviewerId)}/workload`, { method: 'GET' });
 }
 
-export async function getReviewerWorkload(reviewerId: string | number, fallback?: BackendReviewerWorkload): Promise<BackendReviewerWorkload> {
-  return apiFetch(`api/reviewers/${toBackendId(reviewerId)}/workload`, { method: 'GET' }, fallback);
+export async function runReviewerAssignments(reviewersPerProject: number): Promise<{ assignments_created: number; assignments: unknown[] }> {
+  return apiFetch('api/reviewers/assign', {
+    method: 'POST',
+    body: JSON.stringify({ reviewers_per_project: reviewersPerProject }),
+  });
 }
 
-export async function runReviewerAssignments(reviewersPerProject: number, fallback?: any): Promise<{
-  assignments_created: number;
-  assignments: any[];
-}> {
-  return apiFetch(
-    'api/reviewers/assign',
-    {
-      method: 'POST',
-      body: JSON.stringify({ reviewers_per_project: reviewersPerProject }),
-    },
-    fallback
-  );
+export async function getAssignmentsForProject(projectId: string | number) {
+  return apiFetch(`api/reviewers/assignments/${toBackendId(projectId)}`, { method: 'GET' });
 }
 
-export async function reassignNoShowReviewer(projectId: string | number, noShowReviewerId: string | number, fallback?: any): Promise<any> {
-  return apiFetch(
-    `api/reviewers/reassign/${toBackendId(projectId)}/${toBackendId(noShowReviewerId)}`,
-    { method: 'POST' },
-    fallback
-  );
-}
-
-export async function getAssignmentsForProject(projectId: string | number, fallback?: BackendReviewerAssignment[]): Promise<BackendReviewerAssignment[]> {
-  return apiFetch(`api/reviewers/assignments/${toBackendId(projectId)}`, { method: 'GET' }, fallback);
-}
-
-/* ──────────────────────────────────────────────────────────
-   8. COMMUNICATIONS API WRAPPERS
-   ────────────────────────────────────────────────────────── */
-export interface BackendNotification {
-  id: number;
-  participant_id: number;
-  template_key: string;
-  subject: string;
-  status: string;
-  sent_at: string;
-}
-
+/* ── Communications ── */
 export async function sendNotification(payload: {
   participant_id: string | number;
   template_key: string;
-  context?: any;
-}, fallback?: any): Promise<{ id: number; status: string; subject: string }> {
-  return apiFetch(
-    'api/communications/send',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        participant_id: toBackendId(payload.participant_id),
-        template_key: payload.template_key,
-        context: payload.context || {},
-      }),
-    },
-    fallback
-  );
+  context?: Record<string, unknown>;
+}): Promise<{ id: number; status: string; subject: string }> {
+  return apiFetch('api/communications/send', {
+    method: 'POST',
+    body: JSON.stringify({
+      participant_id: toBackendId(payload.participant_id),
+      template_key: payload.template_key,
+      context: payload.context || {},
+    }),
+  });
 }
 
-export async function getParticipantNotifications(participantId: string | number, fallback?: any[]): Promise<any[]> {
-  return apiFetch(`api/communications/participant/${toBackendId(participantId)}`, { method: 'GET' }, fallback);
+export async function getAllNotifications(limit = 100): Promise<Array<{ id: number; participant_id: number; subject: string; template_key: string; sent_at: string }>> {
+  return apiFetch(`api/communications/all?limit=${limit}`, { method: 'GET' });
 }
 
-export async function getAllNotifications(limit = 100, fallback?: any[]): Promise<any[]> {
-  return apiFetch(`api/communications/all?limit=${limit}`, { method: 'GET' }, fallback);
+export async function getParticipantNotifications(participantId: string | number) {
+  return apiFetch(`api/communications/participant/${toBackendId(participantId)}`, { method: 'GET' });
 }
 
-export async function listNotificationTemplates(fallback?: string[]): Promise<string[]> {
-  return apiFetch('api/communications/templates', { method: 'GET' }, fallback);
+export async function listNotificationTemplates() {
+  return apiFetch('api/communications/templates', { method: 'GET' });
 }
 
-/* ──────────────────────────────────────────────────────────
-   9. OVERVIEW ANALYTICS API WRAPPERS
-   ────────────────────────────────────────────────────────── */
+/* ── Analytics ── */
 export interface BackendAnalyticsOverview {
-  participant_count: number;
-  team_count: number;
-  project_count: number;
-  evaluations_completed: number;
-  evaluations_completion_pct: number;
-  reviewer_count: number;
-  reviewer_workload_variance: number;
-  bias_flags_count: number;
-  bias_flags_critical: number;
-  average_raw_score: number;
-  average_normalized_score: number;
+  participants: { total: number; organizations_represented?: number };
+  teams: { total: number };
+  projects: { total: number; evaluation_completion_rate_pct?: number };
+  evaluations: { total: number; avg_normalized_score?: number | null };
+  reviewers: { total: number; active_assignments?: number; workload_balance_variance?: number };
+  fairness: { open_bias_flags: number; by_severity?: Record<string, number> };
 }
 
-export async function getAnalyticsOverview(fallback?: BackendAnalyticsOverview): Promise<BackendAnalyticsOverview> {
-  return apiFetch('api/analytics/overview', { method: 'GET' }, fallback);
+export async function getAnalyticsOverview(): Promise<BackendAnalyticsOverview> {
+  return apiFetch('api/analytics/overview', { method: 'GET' }, false);
+}
+
+export async function getBiasStreamSummary() {
+  return apiFetch('api/bias-stream/summary', { method: 'GET' });
+}
+
+export async function getBiasStreamFlags() {
+  return apiFetch<{ flags: BackendBiasFlag[]; total: number }>('api/bias-stream/flags/live', { method: 'GET' });
+}
+
+/* ── Sync helper: load all backend data after login ── */
+export async function syncAllBackendData(): Promise<{
+  participants: BackendParticipant[];
+  projects: BackendProject[];
+  reviewers: BackendReviewer[];
+  overview: BackendAnalyticsOverview | null;
+  events: BackendEvent[];
+  notifications: Array<{ id: number; participant_id: number; subject: string; template_key: string; sent_at: string }>;
+  biasFlags: BackendBiasFlag[];
+}> {
+  const [participants, projects, reviewers, overview, events, notifications, biasFlags] = await Promise.all([
+    listParticipants().catch(() => []),
+    listProjects().catch(() => []),
+    listReviewers().catch(() => []),
+    getAnalyticsOverview().catch(() => null),
+    listEvents().catch(() => []),
+    getAllNotifications().catch(() => []),
+    listBiasFlags().catch(() => []),
+  ]);
+  return { participants, projects, reviewers, overview, events, notifications, biasFlags };
+}
+
+/* ── Audit Trails ── */
+export interface BackendAuditTrail {
+  id: number;
+  timestamp: string;
+  action: string;
+  userRole: string;
+  details: string;
+  category: string;
+}
+
+export async function listAuditTrails(): Promise<BackendAuditTrail[]> {
+  return apiFetch('api/audit/', { method: 'GET' });
+}
+
+export async function createAuditRecord(payload: {
+  action: string;
+  user_role: string;
+  details: string;
+  category: string;
+}) {
+  return apiFetch('api/audit/', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }

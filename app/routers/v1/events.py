@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.event import EventCreate
-from app.repositories.event_repository import EventRepository
-from app.utils.auth_deps import require_admin
 from app.models.participant import Participant
+from app.repositories.event_repository import EventRepository
+from app.schemas.event import EventCreate
+from app.utils.auth_deps import get_current_user, require_organizer
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/events", tags=["Events"])
 def create_event(
     payload: EventCreate,
     db: Session = Depends(get_db),
-    current_user: Participant = Depends(require_admin),
+    current_user: Participant = Depends(require_organizer),
 ):
     repo = EventRepository(db)
     event = repo.create(
@@ -35,7 +35,10 @@ def create_event(
 
 
 @router.get("/")
-def list_events(db: Session = Depends(get_db)):
+def list_events(
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     repo = EventRepository(db)
     events = repo.list_all()
     return [
@@ -45,7 +48,11 @@ def list_events(db: Session = Depends(get_db)):
 
 
 @router.get("/{event_id}")
-def get_event(event_id: int, db: Session = Depends(get_db)):
+def get_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     repo = EventRepository(db)
     event = repo.get_by_id(event_id)
     if not event:

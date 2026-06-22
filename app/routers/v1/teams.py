@@ -2,15 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.team import TeamCreate, TeamAutoFormRequest
+from app.models.participant import Participant
 from app.repositories.team_repository import TeamRepository
+from app.schemas.team import TeamCreate, TeamAutoFormRequest
 from app.services.team_composition import TeamCompositionService
+from app.utils.auth_deps import get_current_user, require_organizer, require_participant
 
 router = APIRouter(prefix="/api/teams", tags=["Teams"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def create_team(payload: TeamCreate, db: Session = Depends(get_db)):
+def create_team(
+    payload: TeamCreate,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(require_participant),
+):
     repo = TeamRepository(db)
     team = repo.create(payload.name, payload.member_ids)
     return {
@@ -22,14 +28,21 @@ def create_team(payload: TeamCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/")
-def list_teams(db: Session = Depends(get_db)):
+def list_teams(
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     repo = TeamRepository(db)
     teams = repo.list_all()
     return [{"id": t.id, "name": t.name, "member_count": len(t.members)} for t in teams]
 
 
 @router.get("/{team_id}")
-def get_team(team_id: int, db: Session = Depends(get_db)):
+def get_team(
+    team_id: int,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     repo = TeamRepository(db)
     team = repo.get_by_id(team_id)
     if not team:
@@ -50,7 +63,11 @@ def get_team(team_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{team_id}/composition")
-def get_team_composition(team_id: int, db: Session = Depends(get_db)):
+def get_team_composition(
+    team_id: int,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(get_current_user),
+):
     service = TeamCompositionService(db)
     try:
         result = service.analyze_team(team_id)
@@ -60,7 +77,11 @@ def get_team_composition(team_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/auto-form")
-def auto_form_teams(payload: TeamAutoFormRequest, db: Session = Depends(get_db)):
+def auto_form_teams(
+    payload: TeamAutoFormRequest,
+    db: Session = Depends(get_db),
+    current_user: Participant = Depends(require_organizer),
+):
     from app.services.team_formation import TeamFormationService
 
     service = TeamFormationService(db)
@@ -69,4 +90,3 @@ def auto_form_teams(payload: TeamAutoFormRequest, db: Session = Depends(get_db))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"teams_formed": len(teams), "teams": teams}
-

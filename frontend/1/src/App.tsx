@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import * as api from './utils/api';
+import * as auth from './utils/auth';
+import OrganizerPanels from './components/OrganizerPanels';
 import {
   Users,
   Award,
@@ -186,9 +188,16 @@ export default function App() {
     localStorage.setItem('PULSEFORGE_THEME', theme);
   }, [theme]);
 
-  // Form states for login/signup
+  // Auth state — JWT from real backend
+  const [authUser, setAuthUser] = useState<auth.AuthUser | null>(() => auth.getStoredUser());
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [signupRole, setSignupRole] = useState<'participant' | 'reviewer'>('participant');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [backendWarning, setBackendWarning] = useState<string | null>(null);
+  const [liveBiasFlags, setLiveBiasFlags] = useState<api.BackendBiasFlag[]>([]);
+  const [projectFeedback, setProjectFeedback] = useState<Record<string, unknown> | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [chosenRole, setChosenRole] = useState<'organizer' | 'reviewer' | 'participant'>('organizer');
 
   // Registration states with detailed tech-stack & personal info fields
   const [registerForm, setRegisterForm] = useState({
@@ -238,6 +247,10 @@ export default function App() {
     participantsCount: 0,
     timeSaved: 0
   });
+
+  // Live backend rankings data (populated when backend is online and normalization is run)
+  const [liveRankings, setLiveRankings] = useState<api.BackendRankedProject[]>([]);
+  const [analyticsOverview, setAnalyticsOverview] = useState<api.BackendAnalyticsOverview | null>(null);
 
   // ──────────────────────────────────────────────────────────
   // DELL HACKATHON AI CO-PILOT ADVISOR STATES & HANDLERS
@@ -331,23 +344,11 @@ export default function App() {
     setIsDupScanning(true);
     setDupScanResult(null);
     try {
-      const sampleParticipants = participants.map(p => ({
-        id: p.id,
-        name: `${p.firstName} ${p.lastName}`,
-        email: p.email,
-        bio: p.personalBio || '',
-        skills: p.skills
-      }));
-
-      const resp = await fetch('/api/gemini/fuzzy-dedup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          newParticipant: dupScanNewProfile,
-          existingParticipants: sampleParticipants
-        })
+      const data = await api.checkDuplicatesRaw({
+        full_name: `${dupScanNewProfile.firstName} ${dupScanNewProfile.lastName}`.trim(),
+        email: dupScanNewProfile.email,
+        organization: 'Independent' // Default or extracted from dupScanNewProfile if available
       });
-      const data = await resp.json();
       setDupScanResult(data);
     } catch (e: any) {
       setDupScanResult({
@@ -457,124 +458,181 @@ export default function App() {
     return tokens;
   }
 
-  // Synchronize dynamic offline storages on startup
+  const refreshBackendData = useCallback(async () => {
+    if (!auth.getToken()) return;
+    try {
+      const data = await api.syncAllBackendData();
+      if (data.participants.length > 0) {
+        setParticipants(data.participants.map(bp => ({
+          id: api.toFrontendId('p', bp.id),
+          name: bp.full_name,
+          email: bp.email,
+          gender: 'Prefer not to say' as const,
+          institution: bp.organization || 'N/A',
+          country: 'N/A',
+          skills: (bp.raw_skills_text || '').split(',').map(s => s.trim()).filter(Boolean),
+          bio: bp.raw_skills_text || '',
+          experienceLevel: 'Intermediate' as const,
+          registrationTime: new Date().toISOString(),
+          duplicateChecked: true,
+        })));
+      }
+      if (data.projects.length > 0) {
+        setProjects(data.projects.map(bp => ({
+          id: api.toFrontendId('proj', bp.id),
+          title: bp.title,
+          tagline: bp.description.substring(0, 80),
+          description: bp.description,
+          techStack: (bp.tech_stack_text || '').split(',').map(s => s.trim()).filter(Boolean),
+          institution: 'Backend',
+          teamMembers: [`Team #${bp.team_id}`],
+          submittedBy: `p-${bp.team_id}`,
+          githubUrl: bp.repo_url || '',
+          videoUrl: bp.demo_url || '',
+        })));
+      }
+      if (data.reviewers.length > 0) {
+        setReviewers(data.reviewers.map(br => ({
+          id: api.toFrontendId('r', br.id),
+          name: br.full_name,
+          email: br.email,
+          institution: br.organization || '',
+          country: 'N/A',
+          gender: 'Prefer not to say' as const,
+          domainExpertise: (br.expertise_text || '').split(',').map(s => s.trim()).filter(Boolean),
+          assignedProjects: [],
+        })));
+      }
+      if (data.overview) {
+        setAnalyticsOverview(data.overview);
+        setStatsCounter({
+          hackathonsCount: data.events.length || 1,
+          participantsCount: data.overview.participants?.total || 0,
+          timeSaved: Math.round(data.overview.projects?.evaluation_completion_rate_pct || 0),
+        });
+      }
+      if (data.events.length > 0) {
+        setHackathons(data.events.map(e => ({
+          id: api.toFrontendId('hack', e.id),
+          title: e.name,
+          description: e.theme || 'PulseForge managed event',
+          status: (e.status === 'active' ? 'active' : e.status === 'upcoming' ? 'upcoming' : 'past') as Hackathon['status'],
+          participantCount: data.overview?.participants?.total || 0,
+          teamCount: data.overview?.teams?.total || 0,
+          startDate: new Date().toISOString(),
+          endDate: new Date().toISOString(),
+          track: e.theme || 'General',
+        })));
+      }
+      if (Array.isArray(data.notifications) && data.notifications.length > 0) {
+        setCommunications(data.notifications.map((n: { id: number; participant_id: number; subject: string; template_key: string; sent_at: string }) => ({
+          id: `comm-${n.id}`,
+          recipientEmail: `participant-${n.participant_id}@pulseforge.dev`,
+          channel: 'Email' as const,
+          subject: n.subject,
+          content: n.template_key,
+          sentAt: n.sent_at,
+          engagementOpened: true,
+          engagementClicked: false,
+          abTestSegment: 'A',
+        })));
+      }
+      if (data.biasFlags.length > 0) {
+        setLiveBiasFlags(data.biasFlags);
+        setBiasAlerts(data.biasFlags.map(f => ({
+          id: `bias-${f.id}`,
+          timestamp: f.created_at,
+          reviewerId: f.reviewer_id ? api.toFrontendId('r', f.reviewer_id) : '',
+          reviewerName: f.reviewer_id ? `Reviewer #${f.reviewer_id}` : 'Cohort',
+          dimension: (f.dimension === 'gender' ? 'Gender' : f.dimension === 'institution' ? 'Institution' : f.dimension === 'tech_stack' ? 'Tech Stack' : 'Geography') as BiasAlert['dimension'],
+          description: f.description,
+          severity: f.severity as BiasAlert['severity'],
+          audited: f.status !== 'open',
+        })));
+      }
+
+      const trails = await api.listAuditTrails().catch(() => []);
+      if (trails.length > 0) {
+        setAuditTrails(trails.map(t => ({
+          id: `at-${t.id}`,
+          timestamp: t.timestamp,
+          action: t.action,
+          userRole: t.userRole,
+          details: t.details,
+          category: t.category as AuditTrail['category']
+        })));
+      }
+
+      setBackendOnline(true);
+      setBackendWarning(null);
+    } catch (err) {
+      setBackendWarning('Backend disconnected — showing last known data.');
+      setBackendOnline(false);
+    }
+  }, []);
+
+  // Initialize from localStorage (fallback only — backend is source of truth when authenticated)
   useEffect(() => {
     const loadState = <T,>(key: string, defaultVal: T): T => {
       const saved = localStorage.getItem(key);
       if (saved) {
-        try { return JSON.parse(saved); } catch (e) { return defaultVal; }
+        try { return JSON.parse(saved); } catch { return defaultVal; }
       }
       return defaultVal;
     };
 
-    setParticipants(loadState('hack_participants', INITIAL_PARTICIPANTS));
-    setReviewers(loadState('hack_reviewers', INITIAL_REVIEWERS));
-    setProjects(loadState('hack_projects', INITIAL_PROJECTS));
-    setEvaluations(loadState('hack_evaluations', INITIAL_EVALUATIONS));
-    setBiasAlerts(loadState('hack_bias_alerts', INITIAL_BIAS_ALERTS));
-    setAuditTrails(loadState('hack_audit_trails', INITIAL_AUDIT_TRAILS));
-    setCommunications(loadState('hack_communications', INITIAL_COMMUNICATIONS));
-    setHackathons(loadState('hack_hackathons', INITIAL_HACKATHONS));
-
-    // Stats countup emulator
-    let hCount = 0;
-    let pCount = 0;
-    let tSaved = 0;
-    const interval = setInterval(() => {
-      let updated = false;
-      if (hCount < 10000) { hCount += 400; updated = true; }
-      if (pCount < 500000) { pCount += 20000; updated = true; }
-      if (tSaved < 85) { tSaved += 4; updated = true; }
-
-      setStatsCounter({
-        hackathonsCount: hCount,
-        participantsCount: pCount,
-        timeSaved: Math.min(85, tSaved)
-      });
-
-      if (!updated) clearInterval(interval);
-    }, 30);
-
-    return () => clearInterval(interval);
+    if (!auth.getToken()) {
+      setParticipants(loadState('hack_participants', []));
+      setReviewers(loadState('hack_reviewers', []));
+      setProjects(loadState('hack_projects', []));
+      setEvaluations(loadState('hack_evaluations', []));
+      setBiasAlerts(loadState('hack_bias_alerts', []));
+      setAuditTrails(loadState('hack_audit_trails', []));
+      setCommunications(loadState('hack_communications', []));
+      setHackathons(loadState('hack_hackathons', INITIAL_HACKATHONS));
+    }
   }, []);
 
-  // STARTUP BACKEND DISCOVERY & SYNC
+  // Restore session on startup
   useEffect(() => {
-    const autoDiscoverBackend = async () => {
+    const restore = async () => {
       const res = await api.testBackendHealth();
       setBackendOnline(res.online);
-      if (res.online) {
-        console.log(`[PulseForge Core] Link successful to API cluster: ${res.url}`);
-        writeAuditRecord(
-          'Live FastAPI Core Node Found',
-          'System Core',
-          `Inter-process communication established over ${res.url}. Active database registries loaded.`,
-          'Registration'
-        );
-        // Sync overview stats if possible
+      if (!res.online) {
+        setBackendWarning('Backend offline — log in after starting the API server.');
+        return;
+      }
+      if (auth.getToken()) {
         try {
-          const overview = await api.getAnalyticsOverview();
-          if (overview) {
-            setStatsCounter(prev => ({
-              ...prev,
-              participantsCount: overview.participant_count || prev.participantsCount,
-              timeSaved: Math.round(overview.evaluations_completion_pct) || prev.timeSaved
-            }));
-          }
-        } catch (_) {}
+          const user = await api.getMe();
+          setAuthUser(user);
+          setActiveRole(auth.roleToActiveRole(user.role));
+          await refreshBackendData();
+        } catch {
+          auth.logoutAuth();
+          setAuthUser(null);
+          setActiveRole('login');
+        }
+      } else {
+        const status = await api.getDemoStatus();
+        if (status.database_empty) {
+          await api.seedDemoDataset();
+        }
       }
     };
-    autoDiscoverBackend();
-  }, []);
+    restore();
+  }, [refreshBackendData]);
 
-  // Manual trigger to connect & load live dataset
   const handleConnectBackend = async () => {
     setIsSyncingBackend(true);
     api.setBackendUrl(backendUrlInput);
     const res = await api.testBackendHealth();
     setIsSyncingBackend(false);
     setBackendOnline(res.online);
-    
-    if (res.online) {
-      writeAuditRecord(
-        'Manual Backend Connection Link',
-        'Organizer',
-        `Reconfigured API endpoint destination: ${backendUrlInput}`,
-        'Registration'
-      );
-      
-      // Load live metrics
-      try {
-        const overview = await api.getAnalyticsOverview();
-        if (overview) {
-          setStatsCounter(prev => ({
-            ...prev,
-            participantsCount: overview.participant_count || prev.participantsCount,
-            timeSaved: Math.round(overview.evaluations_completion_pct) || prev.timeSaved
-          }));
-        }
-        
-        // Also fetch live projects from backend if any exist
-        const liveProjs = await api.listProjects();
-        if (liveProjs && liveProjs.length > 0) {
-          const mapped = liveProjs.map(bp => ({
-            id: api.toFrontendId('proj', bp.id),
-            title: bp.title,
-            tagline: bp.description.substring(0, 60) + (bp.description.length > 60 ? '...' : ''),
-            description: bp.description,
-            techStack: bp.tech_stack_text.split(',').map(s => s.trim()).filter(s => s.length > 0),
-            institution: 'FastAPI Cluster',
-            teamMembers: ['Hacker Soloist'],
-            submittedBy: `p-${bp.team_id}`
-          }));
-          setProjects(mapped);
-          syncStorage('hack_projects', mapped);
-        }
-      } catch (e) {}
-
-      alert(`Successfully bridged node! Node status is active and linked at ${backendUrlInput}.`);
-    } else {
-      alert(`Connection failed link to ${backendUrlInput}. Ensure Server is hosted at this address and has matching Cross-Origin (CORS) properties. App will continue using client simulation.`);
+    if (res.online && auth.getToken()) {
+      await refreshBackendData();
+    } else if (!res.online) {
+      setBackendWarning('Connection failed. Ensure FastAPI is running on the configured URL.');
     }
   };
 
@@ -587,37 +645,44 @@ export default function App() {
     }
   };
 
-  const handleCreateNewEvent = (e: React.FormEvent) => {
+  const handleCreateNewEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventTitle.trim() || !newEventDesc.trim()) {
       alert("Please provide an event title and description.");
       return;
     }
 
-    const newId = `hack-${Date.now()}`;
-    const newHackathon: Hackathon = {
-      id: newId,
-      title: newEventTitle,
-      description: newEventDesc,
-      status: newEventStatus,
-      participantCount: 0,
-      teamCount: 0,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      track: newEventTrack
-    };
+    try {
+      const backendEvent = await api.createEvent({
+        name: newEventTitle,
+        theme: newEventTrack
+      });
 
-    const updated = [...hackathons, newHackathon];
-    setHackathons(updated);
-    syncStorage('hack_hackathons', updated);
+      const newId = api.toFrontendId('hack', backendEvent.id);
+      const newHackathon: Hackathon = {
+        id: newId,
+        title: backendEvent.name,
+        description: newEventDesc,
+        status: (backendEvent.status === 'active' ? 'active' : backendEvent.status === 'upcoming' ? 'upcoming' : 'past') as Hackathon['status'],
+        participantCount: 0,
+        teamCount: 0,
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        track: backendEvent.theme || newEventTrack
+      };
 
-    // Save state context
-    setSelectedHackathonId(newId);
-    setNewEventTitle('');
-    setNewEventDesc('');
-    setShowCreateEventForm(false);
+      setHackathons(prev => [...prev, newHackathon]);
 
-    writeAuditRecord('Created new operational event target', 'Organizer', `New event "${newEventTitle}" added as ${newEventStatus} target focus.`, 'Registration');
+      // Save state context
+      setSelectedHackathonId(newId);
+      setNewEventTitle('');
+      setNewEventDesc('');
+      setShowCreateEventForm(false);
+
+      writeAuditRecord('Created new operational event target', 'Organizer', `New event "${newEventTitle}" added to platform.`, 'Registration');
+    } catch (err) {
+      alert(err instanceof api.ApiError ? err.message : 'Failed to create event. Is the backend online?');
+    }
   };
 
   const resetOperationalData = () => {
@@ -637,249 +702,102 @@ export default function App() {
   };
 
   // Logger helper to populate Audit Logs
-  const writeAuditRecord = (action: string, role: string, details: string, category: AuditTrail['category']) => {
-    const newRecord: AuditTrail = {
-      id: `at-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      timestamp: new Date().toISOString(),
-      action,
-      userRole: role,
-      details,
-      category
-    };
-    setAuditTrails(prev => {
-      const updated = [newRecord, ...prev];
-      localStorage.setItem('hack_audit_trails', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  // DUPLICATE GUARD REGISTER ANALYZER (Fuzzy comparison model matching spelling & domains)
-  const isDuplicateRegistration = (name: string, email: string): { duplicate: boolean; confidenceScore: number; matchId?: string } => {
-    const normName = name.toLowerCase().replace(/\s+/g, '');
-    const normEmail = email.toLowerCase().replace(/\s+/g, '');
-
-    for (const p of participants) {
-      const pNormName = p.name.toLowerCase().replace(/\s+/g, '');
-      const pNormEmail = p.email.toLowerCase().replace(/\s+/g, '');
-
-      // Check precise matches
-      if (normName === pNormName && normEmail === pNormEmail) {
-        return { duplicate: true, confidenceScore: 100, matchId: p.id };
-      }
-
-      // Check token-based fuzzy name mappings
-      const tokensNew = name.toLowerCase().split(/\s+/);
-      const tokensOld = p.name.toLowerCase().split(/\s+/);
-      let overlaps = 0;
-      tokensNew.forEach(tok => { if (tokensOld.includes(tok)) overlaps++; });
-
-      const matchRatio = (overlaps / Math.max(tokensNew.length, tokensOld.length)) * 100;
-      const domainIdx1 = email.indexOf('@');
-      const domainIdx2 = p.email.indexOf('@');
-      const prefix1 = email.toLowerCase().substring(0, domainIdx1 > 0 ? domainIdx1 : email.length);
-      const prefix2 = p.email.toLowerCase().substring(0, domainIdx2 > 0 ? domainIdx2 : p.email.length);
-      const emailSimilar = prefix1 === prefix2 || prefix1.includes(prefix2) || prefix2.includes(prefix1);
-
-      if (matchRatio >= 50 && emailSimilar) {
-        return { duplicate: true, confidenceScore: Math.round(50 + (matchRatio / 2)), matchId: p.id };
-      }
+  const writeAuditRecord = async (action: string, role: string, details: string, category: AuditTrail['category']) => {
+    try {
+      await api.createAuditRecord({
+        action,
+        user_role: role,
+        details,
+        category
+      });
+      // Refresh local list
+      const trails = await api.listAuditTrails();
+      setAuditTrails(trails.map(t => ({
+        id: `at-${t.id}`,
+        timestamp: t.timestamp,
+        action: t.action,
+        userRole: t.userRole,
+        details: t.details,
+        category: t.category as AuditTrail['category']
+      })));
+    } catch (e: any) {
+      console.error("Audit log failed to save remotely: ", e);
+      alert(`Backend failure: Could not save audit log. Please retry. Error: ${e.message}`);
     }
-    return { duplicate: false, confidenceScore: 0 };
   };
 
-  // SECURED AUTHENTICATOR GATES
-  const handleSystemLogin = (e: React.FormEvent) => {
+
+
+  const handleSystemLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chosenRole) {
-      alert("Please select your designated identity role.");
+    setAuthError(null);
+    if (!loginEmail || !loginPassword) {
+      setAuthError('Email and password are required.');
       return;
     }
-
-    if (chosenRole === 'organizer') {
-      setActiveRole('organizer');
-      writeAuditRecord('Organizer Panel Accessed', 'Organizer', 'Alex logged into multi-tenant host cluster', 'Registration');
-    } else if (chosenRole === 'reviewer') {
-      // Find corresponding reviewer or standard fallback
-      const found = reviewers.find(r => r.email === currentReviewerEmail);
-      if (!found && reviewers.length > 0) {
-        setCurrentReviewerEmail(reviewers[0].email);
-      }
-      setActiveRole('reviewer');
-      writeAuditRecord(`Reviewer Dashboard Login`, 'Reviewer', `Juror context loaded under identifier: ${currentReviewerEmail}`, 'Evaluation');
-    } else if (chosenRole === 'participant') {
-      const found = participants.find(p => p.email === currentParticipantEmail);
-      if (!found && participants.length > 0) {
-        setCurrentParticipantEmail(participants[0].email);
-      }
-      setActiveRole('participant');
-      writeAuditRecord(`Participant Interface Open`, 'Participant', `Innovator profiles fetched under address: ${currentParticipantEmail}`, 'Registration');
+    try {
+      const user = await api.login(loginEmail, loginPassword);
+      setAuthUser(user);
+      setActiveRole(auth.roleToActiveRole(user.role));
+      setCurrentParticipantEmail(user.email);
+      setCurrentReviewerEmail(user.email);
+      await refreshBackendData();
+      writeAuditRecord(`${user.role} authenticated`, user.full_name, `JWT session established for ${user.email}`, 'Registration');
+    } catch (err) {
+      setAuthError(err instanceof api.ApiError ? err.message : 'Login failed. Check credentials or start the backend.');
     }
   };
 
   const handleSystemSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { firstName, lastName, email, organization, country, gender, personalBio, techSkills, experienceLevel, domainExpertise, yearsJudging } = registerForm;
-    
-    if (!firstName || !email) {
-      alert("Please specify at least your first name and structural email.");
+    setAuthError(null);
+    const { firstName, lastName, email, organization, techSkills, domainExpertise } = registerForm;
+    if (!firstName || !email || !loginPassword) {
+      setAuthError('Name, email, and password are required.');
       return;
     }
-
-    const fullName = `${firstName} ${lastName}`.trim();
-    const inst = organization || 'Corporate Enterprise';
-
-    if (chosenRole === 'participant') {
-      // Analyze potential registrations duplicate guard
-      const { duplicate, confidenceScore, matchId } = isDuplicateRegistration(fullName, email);
-
-      // Parse text skills from input tags
-      const parsedTags = techSkills.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-      let defaultTags = parsedTags.length > 0 ? parsedTags : ['Full Stack', 'Technical Execution'];
-
-      setIsSyncing(true);
-      // REAL AI EXTRACTION VIA FASTAPI BACKEND
-      if (backendOnline) {
-        try {
-          const preview = await api.previewExtraction(techSkills);
-          if (preview && preview.normalized_skills && preview.normalized_skills.length > 0) {
-            defaultTags = preview.normalized_skills;
-          }
-        } catch (err) {
-          console.warn("Backend skills extraction preview failed. Fallback to raw manual list.");
-        }
-      }
-
-      const newParticipant: Participant = {
-        id: `p-${Date.now()}`,
-        name: fullName,
-        email: email,
-        gender: gender,
-        institution: inst,
-        country: country || 'Global',
-        skills: defaultTags,
-        bio: personalBio || 'Active programmer collaborating on sustainable networks.',
-        experienceLevel: experienceLevel,
-        registrationTime: new Date().toISOString(),
-        isDuplicateOf: duplicate ? matchId : undefined,
-        similarityScore: duplicate ? confidenceScore : undefined,
-        duplicateChecked: true
-      };
-
-      // PERSIST REGISTRATION AND RUN DUPLICATE FLAGGING ON PYTHON CLUSTER
-      if (backendOnline) {
-        try {
-          await api.createParticipant({
-            full_name: fullName,
-            email: email,
-            organization: inst,
-            raw_skills_text: techSkills
-          });
-          // Initiate background search scan for duplicate flags
-          await api.checkDuplicates(newParticipant.id);
-        } catch (err) {
-          console.warn("Backend student enrollment failed. Synced offline state instead.");
-        }
-      }
-      setIsSyncing(false);
-
-      const updated = [newParticipant, ...participants];
-      setParticipants(updated);
-      syncStorage('hack_participants', updated);
+    const fullName = `${firstName} ${registerForm.lastName}`.trim();
+    const inst = organization || 'Independent';
+    try {
+      const user = await api.register({
+        full_name: fullName,
+        email,
+        password: loginPassword,
+        organization: inst,
+        role: signupRole,
+        raw_skills_text: techSkills,
+        expertise_text: signupRole === 'reviewer' ? domainExpertise : techSkills,
+      });
+      setAuthUser(user);
+      setActiveRole(auth.roleToActiveRole(user.role));
       setCurrentParticipantEmail(email);
-      setActiveRole('participant');
-
-      writeAuditRecord(
-        'New Participant Enrolled',
-        'Public Signup Portal',
-        `AI successfully initialized custom account. Extracted tech credentials: [${defaultTags.join(', ')}]. Double-entry flags: ${duplicate ? `WARNING (${confidenceScore}% duplicate score)` : 'nominal'}`,
-        'Registration'
-      );
-
-      if (duplicate) {
-        alert(`Account created! Note: Duplicate Guard flagged this registration pattern with ${confidenceScore}% high probability matching existing user.`);
-      } else {
-        alert(`Innovator account activated! AI clustered profile as ${experienceLevel} with stack tags: ${defaultTags.join(', ')}.`);
-      }
-
-    } else if (chosenRole === 'reviewer') {
-      const parsedExp = domainExpertise.split(',').map(t => t.trim()).filter(t => t.length > 0);
-      const readyExpertise = parsedExp.length > 0 ? parsedExp : ['AI/ML Systems', 'Digital Transformation'];
-
-      const newReviewer: Reviewer = {
-        id: `r-${Date.now()}`,
-        name: fullName,
-        email: email,
-        institution: inst,
-        country: country || 'Global',
-        gender: gender,
-        domainExpertise: readyExpertise,
-        assignedProjects: []
-      };
-
-      setIsSyncing(true);
-      // REGISTER JURY INLive REST API EXPOSED AT PYTHON CORE
-      if (backendOnline) {
-        try {
-          await api.registerReviewer({
-            full_name: fullName,
-            email: email,
-            organization: inst,
-            expertise_text: domainExpertise,
-            max_workload: 10
-          });
-        } catch (err) {
-          console.warn("Backend reviewer registry failed.");
-        }
-      }
-      setIsSyncing(false);
-
-      const updated = [newReviewer, ...reviewers];
-      setReviewers(updated);
-      syncStorage('hack_reviewers', updated);
       setCurrentReviewerEmail(email);
-      setActiveRole('reviewer');
-
-      writeAuditRecord(
-        'Expert Faculty Reviewer Created',
-        'Judge Registry',
-        `Credential assessment mapping active for ${readyExpertise.join(', ')}. Assigned jury parameters securely.`,
-        'Evaluation'
-      );
-
-      alert(`A Jury Seat has been provisioned under domain alignment: ${readyExpertise.join(', ')}.`);
-
-    } else if (chosenRole === 'organizer') {
-      // Standard organizer promotion login
-      setActiveRole('organizer');
-      writeAuditRecord('Dynamic Organizer Created', 'Organizer', `Admin space initialized under organization: ${inst}`, 'Registration');
-      alert(`Event host environment activated under delegation: ${inst}.`);
+      await refreshBackendData();
+      if (signupRole === 'participant') {
+        try { await api.extractAndSaveSkills(user.id); } catch { /* fallback ok */ }
+      }
+      writeAuditRecord('Account registered', user.full_name, `Role: ${user.role}`, 'Registration');
+      setRegisterForm({
+        firstName: '', lastName: '', email: '', organization: '', country: '',
+        gender: 'Prefer not to say', personalBio: '', techSkills: '',
+        experienceLevel: 'Intermediate', domainExpertise: '', yearsJudging: '4',
+      });
+      setLoginPassword('');
+    } catch (err) {
+      setAuthError(err instanceof api.ApiError ? err.message : 'Registration failed.');
     }
-
-    // Reset signup inputs
-    setRegisterForm({
-      firstName: '',
-      lastName: '',
-      email: '',
-      organization: '',
-      country: '',
-      gender: 'Prefer not to say',
-      personalBio: '',
-      techSkills: 'React, TypeScript, Tailwind, Python',
-      experienceLevel: 'Intermediate',
-      domainExpertise: 'AI/ML, Backend Networks, Cloud Orchestration',
-      yearsJudging: '4'
-    });
   };
 
-  // SYSTEM LOGOUT RETURNING TO WELCOME LANDING
   const handleSystemLogout = () => {
+    api.logout();
+    setAuthUser(null);
     setActiveRole('login');
     setSelectedProjectId('proj-1');
-    writeAuditRecord('Secure user logout', 'Identity Guard', 'Encrypted local cache remain active', 'Registration');
+    writeAuditRecord('Secure user logout', 'Identity Guard', 'JWT cleared from client storage', 'Registration');
   };
 
   // DYNAMIC PARTICIPANT PROJECT SUBMISSION
-  const handleRegisterProjectSubmit = (e: React.FormEvent) => {
+  const handleRegisterProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectForm.title || !projectForm.description) {
       alert("Please state a clear product title and baseline description.");
@@ -889,20 +807,41 @@ export default function App() {
     const linkedHacker = participants.find(p => p.email === currentParticipantEmail) || participants[0];
 
     const parsedTech = projectForm.techStack.split(',').map(s => s.trim()).filter(s => s.length > 0);
-    const techStackArray = parsedTech.length > 0 ? parsedTech : ['Technical Execution', 'Mutil-tier architecture'];
+    const techStackArray = parsedTech.length > 0 ? parsedTech : ['Technical Execution', 'Multi-tier architecture'];
 
     const newProjectSubmit: Project = {
       id: `proj-${Date.now()}`,
       title: projectForm.title,
-      tagline: projectForm.tagline || 'Next-generation Dell-integrated technology stack',
+      tagline: projectForm.tagline || 'Next-generation integrated technology stack',
       description: projectForm.description,
       techStack: techStackArray,
-      institution: linkedHacker?.institution || 'Dell Innovation Labs',
+      institution: linkedHacker?.institution || 'Innovation Labs',
       teamMembers: [linkedHacker ? linkedHacker.name : 'Innovator Soloist'],
       submittedBy: linkedHacker ? linkedHacker.id : 'p-1',
       githubUrl: projectForm.githubUrl,
       videoUrl: projectForm.videoUrl
     };
+
+    // PERSIST TO BACKEND IF ONLINE
+    if (backendOnline) {
+      setIsSyncing(true);
+      try {
+        // Create a default team if needed, then submit project
+        const backendProj = await api.submitProject({
+          team_id: 1, // Default team — in production would use actual team ID
+          title: projectForm.title,
+          description: projectForm.description,
+          tech_stack_text: projectForm.techStack,
+          repo_url: projectForm.githubUrl,
+          demo_url: projectForm.videoUrl,
+        });
+        newProjectSubmit.id = api.toFrontendId('proj', backendProj.id);
+      } catch (err) {
+        console.warn('[PulseForge] Backend project submission failed; stored locally only.', err);
+      } finally {
+        setIsSyncing(false);
+      }
+    }
 
     const updated = [newProjectSubmit, ...projects];
     setProjects(updated);
@@ -912,7 +851,7 @@ export default function App() {
     writeAuditRecord(
       `Project submission registered: "${newProjectSubmit.title}"`,
       'Participant',
-      `Dynamic tech deployment stack: [${techStackArray.join(', ')}] linked on host institution ${newProjectSubmit.institution}.`,
+      `Tech stack: [${techStackArray.join(', ')}]. ${backendOnline ? 'Persisted to backend database.' : 'Stored locally (backend offline).'}`,
       'Matching'
     );
 
@@ -926,101 +865,63 @@ export default function App() {
       videoUrl: 'https://youtube.com/watch?v=demo'
     });
 
-    alert("Hacking submissions securely cataloged! Local data nodes synchronized.");
+    alert(backendOnline ? "Project submitted and persisted to backend! Local state synchronized." : "Project saved locally. Connect backend to persist permanently.");
   };
 
-  // JURY MARKS EVALUATION SUBMISSION
-  const handleEvaluateProjectSubmit = (e: React.FormEvent) => {
+  const handleEvaluateProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const activeJuryMember = reviewers.find(r => r.email === currentReviewerEmail) || reviewers[0];
     const evaluatedProject = projects.find(p => p.id === selectedProjectId);
-
     if (!evaluatedProject) {
-      alert("Invalid selection of project. Review index corrupted.");
+      alert('Select a valid project.');
       return;
     }
-
-    const evaluationIndex: Evaluation = {
-      id: `e-${Date.now()}-${Math.random().toString(36).substr(2, 3)}`,
-      projectId: selectedProjectId,
-      reviewerId: activeJuryMember.id,
-      scores: { ...scoresInput },
-      feedback: feedbackInput || 'Clean execution matching professional software compliance guidelines.',
-      timestamp: new Date().toISOString()
-    };
-
-    // INTUITIVE STATISTICAL BIAS SURFACER RULES
-    const rawAverage = (scoresInput.innovation + scoresInput.execution + scoresInput.impact + scoresInput.design) / 4;
-    let biasTriggered = false;
-
-    // A. Institution Bias
-    if (evaluatedProject.institution && activeJuryMember.institution && evaluatedProject.institution.toLowerCase().trim() === activeJuryMember.institution.toLowerCase().trim()) {
-      if (rawAverage >= 8.5) {
-        biasTriggered = true;
-        const alertObj: BiasAlert = {
-          id: `ba-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          reviewerId: activeJuryMember.id,
-          reviewerName: activeJuryMember.name,
-          dimension: 'Institution',
-          description: `Reviewer ${activeJuryMember.name} evaluated institutional peer project "${evaluatedProject.title}" (same org: ${activeJuryMember.institution}) with excessive rating scoring: ${rawAverage.toFixed(2)}/10 average.`,
-          severity: 'high',
-          audited: false
-        };
-        const updatedAlerts = [alertObj, ...biasAlerts];
-        setBiasAlerts(updatedAlerts);
-        syncStorage('hack_bias_alerts', updatedAlerts);
-      }
+    const reviewerId = authUser?.reviewer_id ?? api.toBackendId(reviewers.find(r => r.email === authUser?.email)?.id || 'r-1');
+    try {
+      await api.submitEvaluation({
+        project_id: api.toBackendId(selectedProjectId),
+        reviewer_id: reviewerId,
+        innovation_score: scoresInput.innovation,
+        technical_score: scoresInput.execution,
+        impact_score: scoresInput.impact,
+        presentation_score: scoresInput.design,
+        feedback_text: feedbackInput || 'Evaluation submitted via PulseForge.',
+      });
+      writeAuditRecord(`Evaluation for "${evaluatedProject.title}"`, authUser?.full_name || 'Reviewer', 'Persisted to backend with weighted scoring', 'Evaluation');
+      setFeedbackInput('');
+      alert('Evaluation saved to backend. Run bias scan from organizer panel to detect patterns.');
+      await refreshBackendData();
+    } catch (err) {
+      alert(err instanceof api.ApiError ? err.message : 'Failed to submit evaluation.');
     }
-
-    // B. Stack Bias (Reviewer has extreme preference matching Python/ML experts)
-    const reviewerLikesML = activeJuryMember.domainExpertise.some(domain => 
-      domain.toLowerCase().includes('ai') || domain.toLowerCase().includes('ml') || domain.toLowerCase().includes('python')
-    );
-    const projectHasML = evaluatedProject.techStack.some(s => 
-      s.toLowerCase().includes('pytorch') || s.toLowerCase().includes('python') || s.toLowerCase().includes('ai') || s.toLowerCase().includes('ml')
-    );
-    if (reviewerLikesML && projectHasML && rawAverage >= 9.2) {
-      biasTriggered = true;
-      const alertObj: BiasAlert = {
-        id: `ba-${Date.now()}-ts`,
-        timestamp: new Date().toISOString(),
-        reviewerId: activeJuryMember.id,
-        reviewerName: activeJuryMember.name,
-        dimension: 'Tech Stack',
-        description: `Alignment bias: python domain expert recorded a highly elevated preference index (${rawAverage.toFixed(2)}) for ML product "${evaluatedProject.title}".`,
-        severity: 'medium',
-        audited: false
-      };
-      const updatedAlerts = [alertObj, ...biasAlerts];
-      setBiasAlerts(updatedAlerts);
-      syncStorage('hack_bias_alerts', updatedAlerts);
-    }
-
-    // Evict duplicate scoring entries and write evaluation index
-    const clearedEvals = evaluations.filter(e => !(e.projectId === selectedProjectId && e.reviewerId === activeJuryMember.id));
-    const updatedEvals = [evaluationIndex, ...clearedEvals];
-    setEvaluations(updatedEvals);
-    syncStorage('hack_evaluations', updatedEvals);
-
-    writeAuditRecord(
-      `Evaluation logged for project "${evaluatedProject.title}"`,
-      'Reviewer',
-      `Raw values assigned: [Innovation: ${scoresInput.innovation}, Execution: ${scoresInput.execution}, Practice: ${scoresInput.impact}, UI: ${scoresInput.design}]. Bias checker: ${biasTriggered ? 'ALERT FORWARDED' : 'CLEAR'}`,
-      'Evaluation'
-    );
-
-    setFeedbackInput('');
-    alert(biasTriggered ? "Scores cataloged! High rating discrepancy mapped automatically. Deviation flagged to the Host Control Panel." : "Evaluations stored securely.");
   };
 
   // AIRLINE-GRADE BIPARTITE WORKLOAD MATCHMAKER
-  const handleTriggerBipartiteMatcher = () => {
+  const handleTriggerBipartiteMatcher = async () => {
     if (projects.length === 0) {
       alert("No active team projects are uploaded. Matchmaker terminated.");
       return;
     }
 
+    if (backendOnline) {
+      setIsSyncing(true);
+      try {
+        const result = await api.runReviewerAssignments(2);
+        writeAuditRecord(
+          'Automated Bipartite Juries Balanced (Backend)',
+          'System AI Agent',
+          `Backend multi-objective optimizer created ${result.assignments_created} assignments across ${projects.length} portfolios (expertise 40%, workload 30%, conflict 20%, diversity 10%).`,
+          'Matching'
+        );
+        setIsSyncing(false);
+        alert(`AI Matchmaker complete! Backend created ${result.assignments_created} assignments using expertise/workload/conflict/diversity optimizer. Check Reviewer Assignments in the API.`);
+        return;
+      } catch (err) {
+        setIsSyncing(false);
+        console.warn('[PulseForge] Backend reviewer assignment failed, running local algorithm.', err);
+      }
+    }
+
+    // LOCAL FALLBACK ALGORITHM
     let logs: string[] = [];
     logs.push("Acquiring bipartite matrices over registrants...");
 
@@ -1065,7 +966,7 @@ export default function App() {
     syncStorage('hack_reviewers', updatedReviewers);
 
     writeAuditRecord(
-      'Automated Bipartite Juries Balanced',
+      'Automated Bipartite Juries Balanced (Local)',
       'System AI Agent',
       `Configured balanced allocations over ${projects.length} portfolios with zero logical conflict risks.`,
       'Matching'
@@ -1075,62 +976,68 @@ export default function App() {
   };
 
   // MULTI-CHANNEL NLP ANNOUNCEMENT BUILDER
-  const handleGenerateAutomatedAnnounce = () => {
+  const handleGenerateAutomatedAnnounce = async () => {
     setIsPromoGenerating(true);
     setPromoResult('');
 
-    setTimeout(() => {
-      let output = '';
-      if (promoChannel === 'Email') {
-        output = `Subject: Connect and Elevate with Dell HackBridge — Focus: ${promoAudience}!
+    let output = '';
+    if (promoChannel === 'Email') {
+      output = `Subject: Connect and Elevate with HackBridge — Focus: ${promoAudience}!\n\nDear Innovator,\n\nOur matching logs are complete. For our designated cohort of ${promoAudience}, the matching system recommends initiating immediate project logs.\n\nIf you are a solo hacker, access the Team Maker below to locate compatible tech stacks in real-time. Ensure your code repositories are mapped clearly to receive optimal evaluations from our specialized jury panels tracking: "${selectedHackathon?.track || 'General Tracks'}".\n\nKeep building,\nHackBridge Organization Committee`;
+    } else if (promoChannel === 'Slack') {
+      output = `🚨 *HackBridge Cohort Update: Attention ${promoAudience}!* 🚨\n\nOur matching engines have updated skill arrays. If your focus lands in *${promoAudience}*, head to the *Team Matchmaking Board* now!\n\n💡 *Quick Tip*: Populate your technical stack fully on your profile to maximize compatibility with the jury evaluation systems!`;
+    } else {
+      output = `🚀 Launching structural team pairing arrays for ${promoAudience} on HackBridge! Equalized scoring, automated conflict protection, and detailed project portfolios. Access your innovator gateway now!`;
+    }
 
-Dear Innovator,
+    setPromoResult(output);
 
-Welcome to the ultimate workspace designed by Dell Technologies!
-
-Our structural matching logs are complete. For our designated cohort of ${promoAudience}, the matching system recommends initiating immediate project logs. 
-
-If you are a solo hacker, access the Team Maker below to locate compatible tech stacks in real-time. Ensure your code repositories are mapped clearly to receive optimal evaluations from our specialized jury panels tracking: "${selectedHackathon?.track || 'General Tracks'}".
-
-Keep building,
-HackBridge Organization Committee`;
-      } else if (promoChannel === 'Slack') {
-        output = `🚨 *HackBridge Cohort Update: Attention ${promoAudience}!* 🚨
-
-Our matching engines have updated skill arrays. If your focus lands in *${promoAudience}*, head to the *Team Matchmaking Board* now!
-
-💡 *Quick Tip*: Populate your technical stack fully on your profile to maximize compatibility with the jury evaluation systems!`;
-      } else {
-        output = `🚀 Launching structural team pairing arrays for ${promoAudience} on Dell HackBridge! Equalized scoring, automated conflict protection, and detailed project portfolios. Access your innovator gateway now! #DellHackBridge`;
+    // SEND REAL NOTIFICATION VIA BACKEND IF ONLINE
+    if (backendOnline && participants.length > 0) {
+      try {
+        const targetParticipant = participants[0];
+        await api.sendNotification({
+          participant_id: api.toBackendId(targetParticipant.id),
+          template_key: 'team_match_found',
+          context: { audience: promoAudience, channel: promoChannel }
+        });
+        writeAuditRecord(
+          `Notification persisted to backend for ${promoAudience}`,
+          'Organizer',
+          `Communication stored in backend database. Channel: ${promoChannel}. Template: team_match_found.`,
+          'Promotion'
+        );
+      } catch (err) {
+        console.warn('[PulseForge] Backend notification send failed:', err);
       }
+    }
 
-      setPromoResult(output);
-      setIsPromoGenerating(false);
+    // Log communication locally
+    const commLog: CommunicationLog = {
+      id: `c-${Date.now()}`,
+      recipientEmail: `${promoAudience.toLowerCase().replace(/\s+/g, '')}@hackbridge.org`,
+      subject: `Workspace broadcast targets the ${promoAudience} cohort`,
+      content: output,
+      channel: promoChannel,
+      timestamp: new Date().toISOString(),
+      engagementOpened: true,
+      engagementClicked: Math.random() > 0.4,
+      abTestSegment: Math.random() > 0.5 ? 'A' : 'B'
+    };
 
-      // Log communication channel
-      const commLog: CommunicationLog = {
-        id: `c-${Date.now()}`,
-        recipientEmail: `${promoAudience.toLowerCase().replace(/\s+/g, '')}@hackbridge.org`,
-        subject: `Workspace broadcast targets the ${promoAudience} cohort`,
-        content: output,
-        channel: promoChannel,
-        timestamp: new Date().toISOString(),
-        engagementOpened: true,
-        engagementClicked: Math.random() > 0.4,
-        abTestSegment: Math.random() > 0.5 ? 'A' : 'B'
-      };
+    const updatedComms = [commLog, ...communications];
+    setCommunications(updatedComms);
+    syncStorage('hack_communications', updatedComms);
 
-      const updatedComms = [commLog, ...communications];
-      setCommunications(updatedComms);
-      syncStorage('hack_communications', updatedComms);
-
+    if (!backendOnline) {
       writeAuditRecord(
-        `Automated cohort brief generated for ${promoAudience}`,
+        `Announcement generated for ${promoAudience} (local only)`,
         'Organizer',
-        `Broadcast written targeting ${promoChannel}. Client-sync reports open rate indicators active.`,
+        `Broadcast written targeting ${promoChannel}. Connect backend to persist notifications.`,
         'Promotion'
       );
-    }, 1100);
+    }
+
+    setIsPromoGenerating(false);
   };
 
   const toggleScoreNormalization = async () => {
@@ -1147,19 +1054,39 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
       try {
         const result = await api.normalizeScores();
         console.log(`Backend Normalization Complete: Normalized ${result.evaluations_normalized} records.`);
-        const liveRankings = await api.getRankings();
-        if (liveRankings && liveRankings.length > 0) {
+        
+        // Fetch and store live rankings
+        const rankings = await api.getRankings();
+        if (rankings && rankings.length > 0) {
+          setLiveRankings(rankings);
           writeAuditRecord(
-            'Live Rankings Pulled',
+            'Live Backend Rankings Loaded',
             'Organizer',
-            `Loaded ${liveRankings.length} normalized system ranking positions directly from statistical server module.`,
+            `Loaded ${rankings.length} normalized project rankings from backend statistical engine. Displaying real scores.`,
             'Evaluation'
           );
+        }
+
+        // Also run bias scan to surface any real bias flags
+        try {
+          const biasScan = await api.runBiasScan();
+          if (biasScan.total_flags > 0) {
+            writeAuditRecord(
+              `Bias Scan Complete: ${biasScan.total_flags} flags detected`,
+              'System AI',
+              `Cohort flags: ${biasScan.cohort_flags.length}. Reviewer outlier flags: ${biasScan.reviewer_flags.length}. Review bias flags panel.`,
+              'Evaluation'
+            );
+          }
+        } catch (biasErr) {
+          console.warn('Bias scan failed:', biasErr);
         }
       } catch (err) {
         console.warn("Backend score normalization request failed.");
       }
       setIsSyncing(false);
+    } else if (!nextState) {
+      setLiveRankings([]);
     }
   };
 
@@ -1426,14 +1353,14 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
           {activeRole !== 'login' && (
             <div className="flex items-center gap-3">
               <span className="text-xs font-mono text-slate-500 hidden md:inline">
-                IP: <strong className="text-slate-800">10.12.3.11</strong> (Secure)
+                API: <strong className={backendOnline ? 'text-emerald-600' : 'text-amber-600'}>{backendOnline ? 'Connected' : 'Simulation'}</strong>
               </span>
               <button
                 onClick={handleSystemLogout}
                 className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded text-xs font-semibold text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-all bg-white"
               >
                 <LogOut className="h-3.5 w-3.5" />
-                <span>Switch Role</span>
+                <span>Log Out</span>
               </button>
             </div>
           )}
@@ -1481,23 +1408,16 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
                   </div>
                 </div>
 
-                {/* VISUAL STATS COUNTUPS */}
+                {/* Live stats from backend when available */}
                 <div className="flex flex-wrap gap-8 pt-4">
                   <div>
-                    <h4 className="text-2xl font-black font-disp">{statsCounter.hackathonsCount.toLocaleString()}</h4>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">hackathons hosted</span>
+                    <h4 className="text-2xl font-black font-disp">{backendOnline ? statsCounter.participantsCount : '—'}</h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">registered participants {backendOnline ? '(live)' : '(connect API)'}</span>
                   </div>
                   <div className="h-10 w-px bg-white/10" />
                   <div>
-                    <h4 className="text-2xl font-black font-disp">
-                      {statsCounter.participantsCount >= 500000 ? "500k" : `${(statsCounter.participantsCount / 1000).toFixed(0)}k`}
-                    </h4>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">participants</span>
-                  </div>
-                  <div className="h-10 w-px bg-white/10" />
-                  <div>
-                    <h4 className="text-2xl font-black font-disp">{statsCounter.timeSaved}%</h4>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">organizer time saved</span>
+                    <h4 className="text-2xl font-black font-disp">{backendOnline ? `${statsCounter.timeSaved}%` : '—'}</h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">evaluation completion</span>
                   </div>
                 </div>
               </div>
@@ -1525,104 +1445,51 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
                   </button>
                 </div>
 
-                {/* ROLE PICKING LABELS - FEATURE #1: ADMIN STRIPPED */}
-                <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Designate Portal Gate</span>
-                
-                <div className="grid grid-cols-3 gap-2 mb-5">
-                  <div
-                    onClick={() => setChosenRole('organizer')}
-                    className={`p-3 border rounded cursor-pointer transition-all text-center flex flex-col items-center justify-between hover:scale-105 active:scale-95 duration-200 ${
-                      chosenRole === 'organizer' 
-                        ? 'border-[#0B1E36] bg-[#0B1E36]/5 text-[#0B1E36] font-bold' 
-                        : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
-                    }`}
-                  >
-                    <SlidersHorizontal className="h-5 w-5 mb-1" />
-                    <span className="text-[11px] font-bold leading-none block">Event Host</span>
-                  </div>
+                {backendWarning && (
+                  <div className="mb-4 p-2 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-800">{backendWarning}</div>
+                )}
+                {authError && (
+                  <div className="mb-4 p-2 bg-red-50 border border-red-200 rounded text-[10px] text-red-700">{authError}</div>
+                )}
 
-                  <div
-                    onClick={() => setChosenRole('reviewer')}
-                    className={`p-3 border rounded cursor-pointer transition-all text-center flex flex-col items-center justify-between hover:scale-105 active:scale-95 duration-200 ${
-                      chosenRole === 'reviewer' 
-                        ? 'border-[#0B1E36] bg-[#0B1E36]/5 text-[#0B1E36] font-bold' 
-                        : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
-                    }`}
-                  >
-                    <Award className="h-5 w-5 mb-1" />
-                    <span className="text-[11px] font-bold leading-none block">Jury Judge</span>
-                  </div>
-
-                  <div
-                    onClick={() => setChosenRole('participant')}
-                    className={`p-3 border rounded cursor-pointer transition-all text-center flex flex-col items-center justify-between hover:scale-105 active:scale-95 duration-200 ${
-                      chosenRole === 'participant' 
-                        ? 'border-[#0B1E36] bg-[#0B1E36]/5 text-[#0B1E36] font-bold' 
-                        : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
-                    }`}
-                  >
-                    <Users className="h-5 w-5 mb-1" />
-                    <span className="text-[11px] font-bold leading-none block">Hacker</span>
-                  </div>
-                </div>
-
-                {/* AUTH CONTROLS */}
                 {authMode === 'login' ? (
                   <form onSubmit={handleSystemLogin} className="space-y-4">
-                    {chosenRole === 'participant' && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">Choose Participant Sandbox Account</label>
-                        <select
-                          value={currentParticipantEmail}
-                          onChange={(e) => setCurrentParticipantEmail(e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-xs outline-none focus:border-[#0B1E36]"
-                        >
-                          {participants.map(p => (
-                            <option key={p.id} value={p.email}>{p.name} ({p.institution})</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {chosenRole === 'reviewer' && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">Choose Jury Reviewer Sandbox Account</label>
-                        <select
-                          value={currentReviewerEmail}
-                          onChange={(e) => setCurrentReviewerEmail(e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-xs outline-none focus:border-[#0B1E36]"
-                        >
-                          {reviewers.map(r => (
-                            <option key={r.id} value={r.email}>{r.name} - Expert: {r.domainExpertise[0]}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {chosenRole === 'organizer' && (
-                      <div className="space-y-1 bg-[#F5F2EB] p-3 border border-[#DFD7C7] rounded">
-                        <span className="text-[11px] font-semibold text-slate-500 block">Logged Context:</span>
-                        <strong className="text-xs text-slate-800">Coordinator Host (Alex)</strong>
-                        <p className="text-[10px] text-slate-400 mt-1">Multi-event simulation triggers, NLP builders, and z-score mathematical offset tools are enabled.</p>
-                      </div>
-                    )}
-
-                    <div className="pt-2">
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-[#0B1E36] hover:bg-[#18304F] text-[#FAF8F5] font-bold text-xs uppercase tracking-wider rounded transition-all duration-200 cursor-pointer hover:scale-[1.02] active:scale-[0.98] shadow-md hover:shadow-lg"
-                      >
-                        Enter Operations Gateway &nbsp;→
-                      </button>
+                    <div className="space-y-1">
+                      <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">Email</label>
+                      <input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
+                        placeholder="organizer@pulseforge.dev"
+                        className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-xs outline-none focus:border-[#0B1E36]" />
                     </div>
-
-                    <p className="text-[10px] text-slate-400 text-center font-mono leading-relaxed mt-2">
-                      Secured integration with Single Sign-on.
-                    </p>
+                    <div className="space-y-1">
+                      <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block">Password</label>
+                      <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
+                        placeholder="demo1234"
+                        className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-xs outline-none focus:border-[#0B1E36]" />
+                    </div>
+                    <div className="p-2 bg-[#F5F2EB] border border-[#DFD7C7] rounded text-[10px] text-slate-500">
+                      Demo accounts: organizer@pulseforge.dev / reviewer@pulseforge.dev / participant@pulseforge.dev — password: demo1234
+                    </div>
+                    <button type="submit" className="w-full py-2.5 bg-[#0B1E36] hover:bg-[#18304F] text-[#FAF8F5] font-bold text-xs uppercase tracking-wider rounded cursor-pointer">
+                      Sign In with JWT →
+                    </button>
+                    <p className="text-[10px] text-slate-400 text-center font-mono">Role is determined by your account — not a UI selector.</p>
                   </form>
                 ) : (
-                  // REGISTER / SIGNUP SCENARIOS - FEATURE #4: DETAILED PROFILE INFORMATION FIELDS
                   <form onSubmit={handleSystemSignup} className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <button type="button" onClick={() => setSignupRole('participant')}
+                        className={`py-2 text-[11px] font-bold rounded border cursor-pointer ${signupRole === 'participant' ? 'border-[#0B1E36] bg-[#0B1E36]/5' : 'border-slate-200'}`}>
+                        Register as Participant
+                      </button>
+                      <button type="button" onClick={() => setSignupRole('reviewer')}
+                        className={`py-2 text-[11px] font-bold rounded border cursor-pointer ${signupRole === 'reviewer' ? 'border-[#0B1E36] bg-[#0B1E36]/5' : 'border-slate-200'}`}>
+                        Register as Reviewer
+                      </button>
+                      <button type="button" onClick={() => setSignupRole('organizer')}
+                        className={`py-2 text-[11px] font-bold rounded border cursor-pointer ${signupRole === 'organizer' ? 'border-[#0B1E36] bg-[#0B1E36]/5' : 'border-slate-200'}`}>
+                        Register as Host
+                      </button>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <label className="text-[10px] font-extrabold text-slate-600 block uppercase tracking-wider">First Name</label>
@@ -1645,6 +1512,12 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
                           className="w-full px-3 py-1.5 border border-slate-300 text-xs rounded-sm outline-none bg-white font-medium"
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-extrabold text-slate-600 block uppercase tracking-wider">Password (min 6 chars)</label>
+                      <input type="password" required minLength={6} value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
+                        className="w-full px-3 py-1.5 border border-slate-300 text-xs rounded-sm outline-none bg-white font-medium" />
                     </div>
 
                     <div className="space-y-1">
@@ -1683,7 +1556,7 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
                     </div>
 
                     {/* FEATURE #4 - PARTICIPANTS SPECIFIC FIELDS: BIOGRAPHY & TECH STACK SKILLS */}
-                    {chosenRole === 'participant' && (
+                    {signupRole === 'participant' && (
                       <div className="p-3 border border-slate-200/80 bg-slate-50 rounded-sm space-y-3">
                         <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#0076ce]">Participant Information &amp; Technical Capabilities</span>
                         
@@ -1740,7 +1613,7 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
                     )}
 
                     {/* FEATURE #4 - REVIEWERS SPECIFIC FIELDS: DISCIPLINARY DOMAINS & EXPERIENCE LEVEL */}
-                    {chosenRole === 'reviewer' && (
+                    {signupRole === 'reviewer' && (
                       <div className="p-3 border border-slate-200/80 bg-slate-50 rounded-sm space-y-3">
                         <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#0076ce]">Jury Expertise &amp; Background Details</span>
                         
@@ -2003,7 +1876,7 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 bg-[#0076ce]/10 text-[#0076ce] rounded-sm text-[10px] font-mono font-extrabold uppercase">HOST DESK</span>
-                <span className="text-slate-400 text-xs">| Alex</span>
+                <span className="text-slate-400 text-xs">| {authUser?.full_name || 'Organizer'}</span>
               </div>
               <h2 className="text-2xl font-black font-disp tracking-tight">Welcome to the Control Cockpit</h2>
               <p className="text-xs text-slate-500">Coordinate participant matchmaking, duplication arrays, and impartial scoring matrices safely.</p>
@@ -2184,25 +2057,29 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
 
             <div className="p-4 border border-slate-200 rounded bg-white">
               <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block font-mono">Portals Registered</span>
-              <strong className="text-slate-900 text-2xl font-black block mt-1">{selectedHackathon.participantCount}</strong>
-              <span className="text-[10px] text-emerald-600 block font-mono font-bold mt-1">↑ conversion normalized</span>
+              <strong className="text-slate-900 text-2xl font-black block mt-1">
+                {analyticsOverview?.participants?.total ?? participants.length}
+              </strong>
+              <span className="text-[10px] text-emerald-600 block font-mono font-bold mt-1">live from database</span>
             </div>
 
             <div className="p-4 border border-slate-200 rounded bg-white">
               <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block font-mono">Projects Portfolios</span>
-              <strong className="text-slate-900 text-2xl font-black block mt-1">{filteredProjects.length}</strong>
+              <strong className="text-slate-900 text-2xl font-black block mt-1">
+                {analyticsOverview?.projects?.total ?? filteredProjects.length}
+              </strong>
               <span className="text-[10px] text-indigo-600 block font-mono font-bold mt-1">
-                {Math.round((filteredProjects.length / Math.max(1, selectedHackathon.participantCount)) * 400)}% dynamic team ratio
+                {analyticsOverview?.projects?.evaluation_completion_rate_pct ?? 0}% evaluated
               </span>
             </div>
 
             <div className="p-4 border border-slate-200 rounded bg-white">
-              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block font-mono">Evaluations Recorded</span>
+              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block font-mono">Bias Flags (open)</span>
               <strong className="text-slate-900 text-2xl font-black block mt-1">
-                {evaluations.filter(e => filteredProjects.some(fp => fp.id === e.projectId)).length}
+                {analyticsOverview?.fairness?.open_bias_flags ?? liveBiasFlags.filter(f => f.status === 'open').length}
               </strong>
               <span className="text-[10px] text-amber-600 font-bold block mt-1 font-mono">
-                {biasAlerts.filter(b => !b.audited).length} pending bias flags
+                from statistical bias engine
               </span>
             </div>
           </div>
@@ -2303,42 +2180,35 @@ Our matching engines have updated skill arrays. If your focus lands in *${promoA
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredProjects.map((p, index) => {
-                    const scopeMetrics = computeProjectMetrics(p.id);
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50">
+                  {(liveRankings.length > 0 ? liveRankings.map(r => ({
+                    id: api.toFrontendId('proj', r.project_id),
+                    title: r.title,
+                    raw: r.raw_mean,
+                    norm: r.normalized_mean,
+                    rank: r.rank,
+                    confidence: r.confidence_score,
+                  })) : filteredProjects.map((p, index) => {
+                    const m = computeProjectMetrics(p.id);
+                    return { id: p.id, title: p.title, raw: m.rawScore, norm: m.normalizedScore, rank: index + 1, confidence: 0 };
+                  })).map(row => (
+                      <tr key={row.id} className="hover:bg-slate-50">
                         <td className="py-3 px-3">
-                          <span className="font-mono bg-[#0c2340] text-white px-2 py-0.5 rounded-sm font-bold text-xs">
-                            #{index + 1}
-                          </span>
+                          <span className="font-mono bg-[#0c2340] text-white px-2 py-0.5 rounded-sm font-bold text-xs">#{row.rank}</span>
                         </td>
-                        <td className="py-3 px-3 font-extrabold text-[#0c2340] leading-snug">{p.title}</td>
+                        <td className="py-3 px-3 font-extrabold text-[#0c2340] leading-snug">{row.title}</td>
                         <td className="py-2 px-3 text-slate-500">{selectedHackathon.track}</td>
-                        <td className="py-2 px-3 text-center font-mono font-bold text-slate-600">
-                          {scopeMetrics.count > 0 ? `${scopeMetrics.rawScore}/10` : '—'}
-                        </td>
-                        <td className="py-2 px-3 text-center font-mono font-bold text-slate-500">
-                          {scopeMetrics.appliedBiasDelta > 0 ? `+${scopeMetrics.appliedBiasDelta}` : scopeMetrics.appliedBiasDelta < 0 ? `${scopeMetrics.appliedBiasDelta}` : '0.0 (Nominal)'}
-                        </td>
-                        <td className="py-2 px-3 text-center font-mono font-extrabold bg-[#0076ce]/5 text-[#0076ce]">
-                          {scopeMetrics.count > 0 ? `${scopeMetrics.normalizedScore}/10` : '—'}
-                        </td>
-                        <td className="py-2 px-3">
-                          {scopeMetrics.count > 0 && isNormalizingBias ? (
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${scopeMetrics.appliedBiasDelta !== 0 ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
-                              {scopeMetrics.appliedBiasDelta !== 0 ? '✓ Normalized Deviation' : '✓ Nominal Distribution'}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-mono text-slate-400">Standardizing disabled</span>
-                          )}
-                        </td>
+                        <td className="py-2 px-3 text-center font-mono font-bold text-slate-600">{row.raw > 0 ? `${row.raw.toFixed(1)}/10` : '—'}</td>
+                        <td className="py-2 px-3 text-center font-mono font-bold text-slate-500">—</td>
+                        <td className="py-2 px-3 text-center font-mono font-extrabold bg-[#0076ce]/5 text-[#0076ce]">{row.norm > 0 ? `${row.norm.toFixed(1)}/10` : '—'}</td>
+                        <td className="py-2 px-3 text-[10px]">{liveRankings.length > 0 ? `confidence ${(row.confidence * 100).toFixed(0)}%` : 'Enable normalization'}</td>
                       </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
           </div>
+
+          <OrganizerPanels onAudit={writeAuditRecord} onRefresh={refreshBackendData} />
 
         </div>
       )}
