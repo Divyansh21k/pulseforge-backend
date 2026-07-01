@@ -1,4 +1,4 @@
-# PulseForge — AI-Enabled Hackathon Management Dashboard
+# HackBridge — AI-Enabled Hackathon Management Dashboard
 
 PulseForge is an AI-powered backend platform that automates the
 hackathon lifecycle end to end: registration → team formation →

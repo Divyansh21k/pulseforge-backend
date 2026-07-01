@@ -198,6 +198,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [resultsDeclared, setResultsDeclared] = useState<boolean>(false);
   const [showGlobalLeaderboard, setShowGlobalLeaderboard] = useState<boolean>(false);
+  const [showVoiceModal, setShowVoiceModal] = useState<boolean>(false);
   const [backendWarning, setBackendWarning] = useState<string | null>(null);
   const [liveBiasFlags, setLiveBiasFlags] = useState<api.BackendBiasFlag[]>([]);
   const [projectFeedback, setProjectFeedback] = useState<Record<string, unknown> | null>(null);
@@ -1425,6 +1426,16 @@ export default function App() {
                 <span className="sm:hidden">Classic</span>
               </>
             )}
+          </button>
+
+          <button
+            onClick={() => setShowVoiceModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 border border-emerald-500 text-white rounded text-[11px] font-mono uppercase tracking-wider font-semibold hover:bg-emerald-500 hover:border-emerald-400 active:scale-95 transition-all duration-200 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse"
+            title="Call the HackBridge AI Voice Assistant"
+          >
+            <span>📞</span>
+            <span className="hidden sm:inline">Call AI Assistant</span>
+            <span className="sm:hidden">Call AI</span>
           </button>
 
           {isSyncing && (
@@ -3025,6 +3036,53 @@ export default function App() {
         >
           <Sparkles className="w-6 h-6" />
         </button>
+      )}
+
+      {/* VOICE ASSISTANT MODAL */}
+      {showVoiceModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col overflow-hidden border border-slate-200 transform scale-100 transition-all duration-300">
+            <div className="p-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex justify-between items-center shadow-md">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📞</span>
+                <h3 className="font-disp font-black text-lg uppercase tracking-wider">AI Voice Assistant</h3>
+              </div>
+              <button onClick={() => setShowVoiceModal(false)} className="text-white/70 hover:text-white cursor-pointer bg-transparent border-0 text-xl font-bold">
+                ✕
+              </button>
+            </div>
+            <div className="p-6 bg-slate-50 text-slate-800 text-sm">
+              <p className="mb-4 text-slate-600">
+                You can talk to the <strong>HackBridge AI Agent</strong> to query events, register, or find teams.
+              </p>
+              
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 text-center">
+                <span className="text-xs uppercase tracking-wider font-bold text-emerald-800 block mb-1">Demo Phone Number</span>
+                <a href="tel:+12674608316" className="text-2xl font-black text-emerald-700 hover:underline tracking-wide block">
+                  +1 (267) 460-8316
+                </a>
+                <span className="text-[10px] text-emerald-600 mt-1 block">Click to call (Twilio via Vapi AI)</span>
+              </div>
+
+              <div className="space-y-3">
+                <span className="text-xs font-mono uppercase tracking-wider font-bold text-slate-500 block">Try saying:</span>
+                <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-600">
+                  <li><em>"What are the upcoming hackathons?"</em></li>
+                  <li><em>"Register me for the hackathon, my name is Divyansh, email is test@example.com, and I know React and Python."</em></li>
+                  <li><em>"Find me matching teams that use React."</em></li>
+                </ul>
+              </div>
+            </div>
+            <div className="bg-slate-100 px-6 py-4 flex justify-end border-t border-slate-200">
+              <button 
+                onClick={() => setShowVoiceModal(false)} 
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded uppercase tracking-wider transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* GLOBAL LEADERBOARD MODAL */}

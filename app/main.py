@@ -8,6 +8,7 @@ from app.routers.v1 import auth as auth_router
 from app.routers.v1 import communications as communications_router
 from app.routers.v1 import bias_stream as bias_stream_router
 from app.routers.v1 import demo as demo_router
+from app.routers.v1 import voice as voice_router
 from app.repositories.participant_repository import ParticipantRepository
 
 Base.metadata.create_all(bind=engine)
@@ -48,6 +49,7 @@ app.include_router(communications_router.router)
 app.include_router(bias_stream_router.router)
 app.include_router(audit.router)
 app.include_router(gemini.router)
+app.include_router(voice_router.router)
 
 
 @app.get("/health")
