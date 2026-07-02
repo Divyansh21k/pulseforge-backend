@@ -140,11 +140,11 @@ def send_notification(
         db.refresh(record)
         logger.info(f"[CommunicationService] Communication record created: id={record.id}, template='{template_key}'")
 
-        # --- Send email via Gmail SMTP ---
+        # --- Send email via generic SMTP ---
         if t["channel"] == "email":
-            if not settings.gmail_sender_email or not settings.gmail_app_password:
+            if not settings.smtp_email or not settings.smtp_password or not settings.smtp_host:
                 logger.warning(
-                    "[CommunicationService] GMAIL_SENDER_EMAIL or GMAIL_APP_PASSWORD is not set — "
+                    "[CommunicationService] SMTP_EMAIL, SMTP_PASSWORD, or SMTP_HOST is not set — "
                     "skipping email send. Check your .env file."
                 )
                 record.status = "skipped_no_config"
@@ -162,7 +162,7 @@ def send_notification(
                 return record
 
             logger.info(
-                f"[CommunicationService] Sending email via Gmail SMTP → "
+                f"[CommunicationService] Sending email via SMTP → "
                 f"to='{participant.email}', subject='{subject}'"
             )
 
@@ -170,7 +170,7 @@ def send_notification(
                 # Build the email message
                 msg = MIMEMultipart("alternative")
                 msg["Subject"] = subject
-                msg["From"] = f"PulseForge <{settings.gmail_sender_email}>"
+                msg["From"] = f"PulseForge <{settings.smtp_email}>"
                 msg["To"] = participant.email
 
                 # Plain-text fallback + HTML version
@@ -178,18 +178,31 @@ def send_notification(
                 msg.attach(MIMEText(plain_body, "plain"))
                 msg.attach(MIMEText(f"<p>{body}</p>", "html"))
 
-                # Connect to Gmail's SMTP server over TLS (port 465)
+                # Connect to SMTP server
                 context = ssl.create_default_context()
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-                    server.login(
-                        settings.gmail_sender_email.strip(),
-                        settings.gmail_app_password.strip(),
-                    )
-                    server.sendmail(
-                        settings.gmail_sender_email.strip(),
-                        participant.email,
-                        msg.as_string(),
-                    )
+                if settings.smtp_port == 465:
+                    with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=context) as server:
+                        server.login(
+                            settings.smtp_email.strip(),
+                            settings.smtp_password.strip(),
+                        )
+                        server.sendmail(
+                            settings.smtp_email.strip(),
+                            participant.email,
+                            msg.as_string(),
+                        )
+                else:
+                    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                        server.starttls(context=context)
+                        server.login(
+                            settings.smtp_email.strip(),
+                            settings.smtp_password.strip(),
+                        )
+                        server.sendmail(
+                            settings.smtp_email.strip(),
+                            participant.email,
+                            msg.as_string(),
+                        )
 
                 logger.info(
                     f"[CommunicationService] ✅ Email sent successfully to '{participant.email}'"
@@ -199,14 +212,13 @@ def send_notification(
 
             except smtplib.SMTPAuthenticationError:
                 logger.error(
-                    "[CommunicationService] ❌ Gmail authentication failed!\n"
-                    "  👉 Make sure you are using a Gmail APP PASSWORD (not your normal Gmail password).\n"
-                    "  Generate one at: myaccount.google.com → Security → App Passwords"
+                    "[CommunicationService] ❌ SMTP authentication failed!\n"
+                    "  👉 Check your SMTP credentials in the .env file."
                 )
                 record.status = "failed_auth"
                 db.commit()
             except smtplib.SMTPException as exc:
-                logger.error(f"[CommunicationService] ❌ Gmail SMTP error: {exc}")
+                logger.error(f"[CommunicationService] ❌ SMTP error: {exc}")
                 record.status = "failed_smtp"
                 db.commit()
             except Exception as exc:
