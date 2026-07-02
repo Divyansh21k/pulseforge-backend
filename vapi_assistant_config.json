@@ -1,0 +1,244 @@
+{
+  "_comment": "Paste the contents of the 'assistant' key directly into the Vapi Dashboard → Assistants → Create Assistant (JSON mode). Replace <YOUR_NGROK_OR_SERVER_URL> with your actual public URL.",
+  "assistant": {
+    "name": "HackBridge AI Voice Assistant",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "temperature": 0.3,
+      "systemPrompt": "You are HackBridge, the friendly AI Voice Assistant for the HackBridge Hackathon Management Platform.\n\nYour role is to help participants, reviewers, and organizers interact with the HackBridge platform entirely over a phone call.\n\nYou have access to the following tools that let you take real actions:\n- get_hackathon_info: Tell the caller about the current/upcoming hackathon\n- get_upcoming_events: List all hackathon events\n- register_participant: Register a new participant for the hackathon\n- get_participant_status: Check a participant's registration, team, and project status\n- find_teams_by_skills: Find teams that have members with specific skills\n- find_team_for_me: Use AI matchmaking to find the best team for the caller based on their skills\n- request_team_join: Send an introduction email from the caller to a specific team\n- get_team_details: Get info about a specific team's members and project\n- get_project_rankings: Get the current leaderboard / project rankings\n- get_project_feedback: Get reviewer feedback for a specific project\n- get_reviewer_assignments: Check what projects a reviewer is assigned to\n- get_analytics_overview: Get a live summary of hackathon stats for organizers\n- create_hackathon_event: Create a new hackathon event (for organizers)\n\nGuidelines:\n1. Be concise, warm, and professional. This is a voice call — keep responses under 3 sentences where possible.\n2. Always confirm the caller's identity (by phone or email) before performing actions on their behalf.\n3. If you don't understand a request, ask a clarifying question — do not guess.\n4. After completing an action (registration, team match, etc.), always tell the caller if an email has been sent.\n5. Never ask for sensitive information like passwords or payment details.\n6. If a tool returns an error or 'try again', apologize briefly and suggest calling back or using the web dashboard.\n7. At the end of every call, offer one more thing you can help with before saying goodbye.\n\nOpening line: 'Hello! Welcome to HackBridge, your AI-powered hackathon companion. I can help you register, find a team, check the leaderboard, and more. How can I help you today?'"
+    },
+    "voice": {
+      "provider": "11labs",
+      "voiceId": "paula",
+      "stability": 0.5,
+      "similarityBoost": 0.75,
+      "style": 0.0,
+      "useSpeakerBoost": true
+    },
+    "firstMessage": "Hello! Welcome to HackBridge, your AI-powered hackathon companion. I can help you register, find a team, check the leaderboard, and more. How can I help you today?",
+    "endCallPhrases": ["goodbye", "bye", "thank you bye", "that's all", "see you"],
+    "serverUrl": "https://<YOUR_NGROK_OR_SERVER_URL>/api/voice/vapi-webhook",
+    "serverUrlSecret": "",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_hackathon_info",
+          "description": "Get detailed information about the current or next hackathon event — name, theme, dates, and status.",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_upcoming_events",
+          "description": "List all hackathon events in the system, including their themes, dates, and statuses.",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "register_participant",
+          "description": "Register a new participant for the hackathon. Requires their full name, email address, and optionally their skills.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The participant's full name."
+              },
+              "email": {
+                "type": "string",
+                "description": "The participant's email address. Accept spoken formats like 'john dot doe at gmail dot com'."
+              },
+              "skills": {
+                "type": "string",
+                "description": "The participant's skills or areas of expertise (optional), e.g. 'Python, machine learning, React'."
+              }
+            },
+            "required": ["name", "email"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_participant_status",
+          "description": "Check a participant's registration status, team membership, and project submission. Can look up by the caller's phone number automatically, or by email.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "description": "The participant's email address (optional if calling from a registered phone number)."
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "find_teams_by_skills",
+          "description": "Search for teams that have members with a specific skill or technology. Useful for participants looking for teammates.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "skills": {
+                "type": "string",
+                "description": "The skill or technology to search for, e.g. 'machine learning', 'React', 'blockchain'."
+              }
+            },
+            "required": ["skills"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "find_team_for_me",
+          "description": "Use AI-powered matchmaking to find the best team for the caller based on their skills and each team's current skill gaps. Returns the single best-matched team.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "skills": {
+                "type": "string",
+                "description": "The caller's skills. If not provided, uses skills from their registered profile."
+              },
+              "email": {
+                "type": "string",
+                "description": "The caller's email (optional if calling from a registered phone number)."
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "request_team_join",
+          "description": "Send an introduction email from the caller to all members of a specific team, expressing interest in joining.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "team_name": {
+                "type": "string",
+                "description": "The name of the team the caller wants to join."
+              },
+              "email": {
+                "type": "string",
+                "description": "The caller's email (optional if calling from a registered phone number)."
+              }
+            },
+            "required": ["team_name"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_team_details",
+          "description": "Get detailed information about a specific team — member names, skills, project name, and skill diversity score.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "team_name": {
+                "type": "string",
+                "description": "The name of the team to look up."
+              }
+            },
+            "required": ["team_name"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_project_rankings",
+          "description": "Get the current hackathon leaderboard — top 3 ranked projects with their scores and reviewer counts.",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_project_feedback",
+          "description": "Get detailed reviewer feedback and scores for a specific project by name.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "description": "The name or partial name of the project."
+              }
+            },
+            "required": ["project_name"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_reviewer_assignments",
+          "description": "Get the list of projects assigned to a reviewer for evaluation. Looks up by email or by the caller's phone number.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "description": "The reviewer's email address (optional if calling from a registered phone number)."
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_analytics_overview",
+          "description": "Get a live summary of the hackathon statistics — participants, teams, projects, evaluation completion rate, and fairness flags. Useful for organizers.",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "create_hackathon_event",
+          "description": "Create a new hackathon event. Only available to registered organizers.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The name of the hackathon event."
+              },
+              "theme": {
+                "type": "string",
+                "description": "The theme or focus area of the hackathon (e.g. 'AI & Sustainability')."
+              },
+              "email": {
+                "type": "string",
+                "description": "The organizer's email address for identity verification."
+              }
+            },
+            "required": ["name"]
+          }
+        }
+      }
+    ]
+  }
+}

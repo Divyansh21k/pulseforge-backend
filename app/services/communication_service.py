@@ -53,6 +53,47 @@ TEMPLATES = {
         "body": "Hi team, meet {name}! They are interested in joining your team '{team_name}'. {name}'s skills are: {skills}. <br><br>Please connect and see if it's a good match!",
         "channel": "email",
     },
+    "voice_call_summary": {
+        "subject": "📞 Your HackBridge Call Summary",
+        "body": (
+            "Hi {name},<br><br>"
+            "Thanks for calling the HackBridge AI Voice Assistant! Here's a summary of your call:<br><br>"
+            "<strong>Summary:</strong><br>{summary}<br><br>"
+            "<strong>Call Transcript (excerpt):</strong><br>"
+            "<pre style='background:#f4f4f4;padding:12px;border-radius:6px;font-size:13px;'>{transcript}</pre>"
+            "<br>If you need anything else, call us again or visit the web dashboard.<br><br>"
+            "— The HackBridge Team"
+        ),
+        "channel": "email",
+    },
+    "voice_team_match": {
+        "subject": "🤝 HackBridge AI Found You a Team Match!",
+        "body": (
+            "Hi {name},<br><br>"
+            "Our AI Voice Assistant found a great team match for your skills!<br><br>"
+            "<strong>Recommended Team:</strong> {team_name}<br>"
+            "<strong>Current Members:</strong> {member_names}<br>"
+            "<strong>Your Skills:</strong> {skills}<br>"
+            "<strong>What this team needs:</strong> {gaps}<br><br>"
+            "To connect with them, call the HackBridge Voice Assistant and say "
+            "<em>'Request introduction to team {team_name}'</em>, "
+            "or visit the web dashboard to reach out directly.<br><br>"
+            "— The HackBridge AI Matchmaker"
+        ),
+        "channel": "email",
+    },
+    "voice_reviewer_schedule": {
+        "subject": "📋 Your HackBridge Review Assignments",
+        "body": (
+            "Hi {name},<br><br>"
+            "Here are your current project review assignments from HackBridge:<br><br>"
+            "{assignments_text}<br><br>"
+            "Please submit all evaluations before the deadline. "
+            "You can access the evaluation interface on the web dashboard.<br><br>"
+            "— The HackBridge Team"
+        ),
+        "channel": "email",
+    },
 }
 
 
