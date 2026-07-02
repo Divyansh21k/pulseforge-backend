@@ -1,4 +1,13 @@
 venv/
+.venv/
+.venv_deps/
+
+# Secrets — never commit these
 .env
+.env.local
+
+# .env.example is safe to commit (it has no real keys)
+
 __pycache__/
+*.pyc
 *.db

@@ -24,7 +24,9 @@ def normalize_spoken_email(email: str) -> str:
 
 
 def format_vapi_response(text: str) -> str:
-    return f"[SYSTEM: Read the following exactly to the user:] {text}"
+    # Return the plain result — Vapi's LLM reads tool results directly
+    # and uses its system prompt to decide how to speak them.
+    return text
 
 
 def get_upcoming_events(db: Session) -> str:

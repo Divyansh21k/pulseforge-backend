@@ -37,10 +37,13 @@ def register_participant(
         raw_skills_text=payload.raw_skills_text,
     )
     
-    # Queue confirmation email to run in the background
+    # Queue confirmation email to run in the background.
+    # IMPORTANT: Pass db=None so send_notification opens its own session.
+    # The request-scoped `db` is closed by FastAPI before this task executes,
+    # which would silently cause all DB queries inside the task to fail.
     background_tasks.add_task(
         send_notification,
-        db=db,
+        db=None,
         participant_id=participant.id,
         template_key="registration_confirmed",
         context={"name": participant.full_name}
