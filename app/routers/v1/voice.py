@@ -92,10 +92,10 @@ async def create_outbound_call(call_req: OutboundCallRequest):
     try:
         response = httpx.post(
             "https://api.vapi.ai/call/phone",
-            headers={"Authorization": f"Bearer {settings.vapi_api_key}"},
+            headers={"Authorization": f"Bearer {settings.vapi_api_key.strip()}"},
             json={
-                "phoneNumberId": settings.vapi_phone_number_id,
-                "assistantId": settings.vapi_assistant_id,
+                "phoneNumberId": settings.vapi_phone_number_id.strip(),
+                "assistantId": settings.vapi_assistant_id.strip(),
                 "customer": {
                     "number": call_req.phone_number
                 }
