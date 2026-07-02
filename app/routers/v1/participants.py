@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -8,6 +8,7 @@ from app.models.participant import Participant
 from app.repositories.participant_repository import ParticipantRepository
 from app.schemas.participant import ParticipantCreate, ParticipantOut
 from app.utils.auth_deps import get_current_user, require_organizer
+from app.services.communication_service import send_notification
 
 router = APIRouter(prefix="/api/participants", tags=["Participants"])
 
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/api/participants", tags=["Participants"])
 @router.post("/", response_model=ParticipantOut, status_code=status.HTTP_201_CREATED)
 def register_participant(
     payload: ParticipantCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Participant = Depends(require_organizer),
 ):
@@ -34,6 +36,16 @@ def register_participant(
         organization=payload.organization,
         raw_skills_text=payload.raw_skills_text,
     )
+    
+    # Queue confirmation email to run in the background
+    background_tasks.add_task(
+        send_notification,
+        db=db,
+        participant_id=participant.id,
+        template_key="registration_confirmed",
+        context={"name": participant.full_name}
+    )
+    
     return participant
 
 
