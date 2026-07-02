@@ -1,6 +1,9 @@
 import logging
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from datetime import datetime, timezone
-import httpx
 from sqlalchemy.orm import Session
 from app.models.communication import Communication
 from app.models.participant import Participant
@@ -96,14 +99,14 @@ def send_notification(
         db.refresh(record)
         logger.info(f"[CommunicationService] Communication record created: id={record.id}, template='{template_key}'")
 
-        # --- Send email via Resend ---
+        # --- Send email via Gmail SMTP ---
         if t["channel"] == "email":
-            if not settings.resend_api_key:
+            if not settings.gmail_sender_email or not settings.gmail_app_password:
                 logger.warning(
-                    "[CommunicationService] RESEND_API_KEY is not set in environment — "
+                    "[CommunicationService] GMAIL_SENDER_EMAIL or GMAIL_APP_PASSWORD is not set — "
                     "skipping email send. Check your .env file."
                 )
-                record.status = "skipped_no_api_key"
+                record.status = "skipped_no_config"
                 db.commit()
                 return record
 
@@ -118,57 +121,52 @@ def send_notification(
                 return record
 
             logger.info(
-                f"[CommunicationService] Sending email via Resend → to='{participant.email}', "
-                f"subject='{subject}'"
+                f"[CommunicationService] Sending email via Gmail SMTP → "
+                f"to='{participant.email}', subject='{subject}'"
             )
 
-            payload = {
-                "from": settings.resend_from_email,
-                "to": [participant.email],
-                "subject": subject,
-                "html": f"<p>{body}</p>",
-            }
-            logger.info(f"[CommunicationService] Resend payload: {payload}")
-
             try:
-                response = httpx.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {settings.resend_api_key.strip()}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                    timeout=10,
-                )
+                # Build the email message
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"] = f"PulseForge <{settings.gmail_sender_email}>"
+                msg["To"] = participant.email
 
-                # --- Full response logging ---
+                # Plain-text fallback + HTML version
+                plain_body = body.replace("<br>", "\n").replace("<br/>", "\n")
+                msg.attach(MIMEText(plain_body, "plain"))
+                msg.attach(MIMEText(f"<p>{body}</p>", "html"))
+
+                # Connect to Gmail's SMTP server over TLS (port 465)
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+                    server.login(
+                        settings.gmail_sender_email.strip(),
+                        settings.gmail_app_password.strip(),
+                    )
+                    server.sendmail(
+                        settings.gmail_sender_email.strip(),
+                        participant.email,
+                        msg.as_string(),
+                    )
+
                 logger.info(
-                    f"[CommunicationService] Resend HTTP {response.status_code}: {response.text}"
+                    f"[CommunicationService] ✅ Email sent successfully to '{participant.email}'"
                 )
-
-                if response.status_code >= 400:
-                    logger.error(
-                        f"[CommunicationService] ❌ Resend API returned an error!\n"
-                        f"  Status : {response.status_code}\n"
-                        f"  Body   : {response.text}\n"
-                        f"  👉 Common causes:\n"
-                        f"     - 'onboarding@resend.dev' only works when sending TO the account owner's email on the free plan.\n"
-                        f"     - You may need to verify a custom domain in Resend and change the 'from' address.\n"
-                        f"     - Double-check RESEND_API_KEY in your .env."
-                    )
-                    record.status = "failed"
-                else:
-                    logger.info(
-                        f"[CommunicationService] ✅ Email sent to '{participant.email}' | "
-                        f"Resend id: {response.json().get('id', 'N/A')}"
-                    )
-                    record.status = "sent"
-
+                record.status = "sent"
                 db.commit()
 
-            except httpx.TimeoutException as exc:
-                logger.error(f"[CommunicationService] Resend request timed out: {exc}")
-                record.status = "failed_timeout"
+            except smtplib.SMTPAuthenticationError:
+                logger.error(
+                    "[CommunicationService] ❌ Gmail authentication failed!\n"
+                    "  👉 Make sure you are using a Gmail APP PASSWORD (not your normal Gmail password).\n"
+                    "  Generate one at: myaccount.google.com → Security → App Passwords"
+                )
+                record.status = "failed_auth"
+                db.commit()
+            except smtplib.SMTPException as exc:
+                logger.error(f"[CommunicationService] ❌ Gmail SMTP error: {exc}")
+                record.status = "failed_smtp"
                 db.commit()
             except Exception as exc:
                 logger.exception(f"[CommunicationService] Unexpected error sending email: {exc}")

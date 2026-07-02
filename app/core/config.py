@@ -8,12 +8,12 @@ class Settings(BaseSettings):
     # --- Gemini ---
     gemini_api_key: str = ""
 
-    # --- Resend (email) ---
-    resend_api_key: str = ""
-    # The verified sender address in your Resend account.
-    # Free plan: use 'onboarding@resend.dev' to send ONLY to your own Resend account email.
-    # Production: use 'noreply@yourdomain.com' after verifying a domain in Resend.
-    resend_from_email: str = "onboarding@resend.dev"
+    # --- Gmail SMTP (email) ---
+    # The Gmail address you want to send FROM (e.g. pulseforge.team@gmail.com)
+    gmail_sender_email: str = ""
+    # A Gmail App Password (16 chars) — NOT your regular Gmail password.
+    # Generate one at: myaccount.google.com → Security → App Passwords
+    gmail_app_password: str = ""
 
     # --- Vapi.ai (voice assistant) ---
     vapi_api_key: str = ""
