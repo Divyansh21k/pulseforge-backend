@@ -45,7 +45,13 @@ async def vapi_webhook(request: Request, db: Session = Depends(get_db)):
     caller_phone = message.get("call", {}).get("customer", {}).get("number", "")
 
     results = []
-    for call in message.get("toolCalls", []):
+    
+    # Vapi sends 'toolCalls' for Server URL tools, and 'toolWithToolCallList' for API Request tools.
+    tool_calls = message.get("toolCalls", [])
+    if not tool_calls and "toolWithToolCallList" in message:
+        tool_calls = [item.get("toolCall", {}) for item in message.get("toolWithToolCallList", [])]
+
+    for call in tool_calls:
         call_id = call.get("id", "")
         fn_name = call.get("function", {}).get("name", "")
         raw_args = call.get("function", {}).get("arguments", "{}")
