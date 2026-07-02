@@ -35,50 +35,56 @@ FIRST_NAMES = [
     "Aarav", "Vivaan", "Aditya", "Sai", "Ishaan", "Diya", "Ananya", "Saanvi",
     "Myra", "Kiara", "Liam", "Noah", "Emma", "Olivia", "Mia", "Ethan",
     "Sofia", "Lucas", "Ava", "Mason", "Priya", "Rohan", "Neha", "Karan",
+    "Wei", "Jin", "Hassan", "Omar", "Yuki", "Sakura", "Elena", "Mateo"
 ]
 LAST_NAMES = [
     "Sharma", "Verma", "Patel", "Iyer", "Nair", "Gupta", "Reddy", "Singh",
     "Khan", "Mehta", "Park", "Kim", "Lopez", "Garcia", "Chen", "Wang",
-    "Brown", "Wilson", "Anderson", "Clark",
+    "Brown", "Wilson", "Anderson", "Clark", "Alves", "Silva", "Ali"
 ]
-ORGS = ["VIT University", "MIT", "Stanford", "IIT Bombay", "BITS Pilani", "UC Berkeley"]
-GENDERS = ["male", "female"]
-REGIONS = ["south-asia", "north-america", "west-asia", "europe"]
+ORGS = [
+    "Stanford University", "Massachusetts Institute of Technology (MIT)", 
+    "University of Waterloo", "Carnegie Mellon University", 
+    "National University of Singapore", "Indian Institute of Technology (IIT)", 
+    "University of California, Berkeley", "Tsinghua University"
+]
+GENDERS = ["male", "female", "non-binary"]
+REGIONS = ["North America", "Europe", "South Asia", "East Asia", "South America", "Middle East"]
 SKILL_PHRASES = [
-    "I love working with react, node.js and building full stack web apps",
-    "Strong in python, machine learning and data science, also know pandas",
-    "Mobile developer, flutter and android, some kotlin too",
-    "DevOps engineer, aws, terraform, ci/cd pipelines",
-    "Backend with java and sql, building scalable apis",
-    "UI/UX designer, figma, also dabble in frontend css",
-    "Blockchain developer, solidity and web3 smart contracts",
-    "Cybersecurity enthusiast, penetration testing and infosec",
-    "Full stack: javascript, react, nodejs, sql databases",
-    "Cloud architecture on gcp and azure, plus some devops",
+    "Full-stack engineer with 3 years of experience in React, Next.js, and PostgreSQL. Interested in building scalable web applications.",
+    "Data scientist specializing in NLP and time-series forecasting. Proficient in Python, PyTorch, and Pandas.",
+    "Backend developer focused on distributed systems. Go, Rust, gRPC, and Kubernetes are my bread and butter.",
+    "Mobile app developer (Flutter/Dart). I love creating smooth, accessible cross-platform experiences.",
+    "DevOps and Cloud architect. AWS Certified Solutions Architect. I automate everything using Terraform and GitHub Actions.",
+    "UI/UX designer with a background in cognitive psychology. Figma ninja. I also write some frontend code in Vue.js.",
+    "Blockchain researcher. I write secure smart contracts in Solidity and Cairo. Deeply interested in zero-knowledge proofs.",
+    "Cybersecurity researcher. Penetration testing, malware analysis, and network security. OSCP certified.",
+    "Hardware hacker. C/C++, Arduino, Raspberry Pi, and IoT protocols like MQTT. I make physical things talk to the internet.",
+    "Machine Learning Engineer. I deploy LLMs to production using vLLM and TensorRT-LLM. Heavy Python and Cuda experience."
 ]
 PROJECT_IDEAS = [
-    ("CampusConnect", "A social platform connecting students across departments for project collaboration.", "react, nodejs, sql", "https://github.com/mockuser/campusconnect"),
-    ("EcoTrack", "Carbon footprint tracker using machine learning predictions for daily habits.", "python, machine-learning, react", "https://github.com/mockuser/ecotrack"),
-    ("SmartAttend", "AI-powered attendance system using facial recognition.", "python, opencv, react", "https://github.com/mockuser/smartattend"),
-    ("StudyBuddy", "AI tutor that generates personalized practice questions from lecture notes.", "python, machine-learning, nodejs", "https://github.com/mockuser/studybuddy"),
-    ("MedAlert", "Wearable health monitor with anomaly detection alerts.", "python, machine-learning, mobile", "https://github.com/mockuser/medalert"),
-    ("CodeReview AI", "Automated code review assistant flagging bugs and style issues.", "python, javascript, backend", "https://github.com/mockuser/codereview-ai"),
-    ("VolunteerHub", "Matches student volunteers to local NGOs based on skills.", "react, nodejs, sql", "https://github.com/mockuser/volunteerhub"),
-    ("AgriSense", "IoT + ML system predicting crop yield from sensor data.", "python, machine-learning, devops", "https://github.com/mockuser/agrisense"),
-    ("CampusEats", "Crowd-sourced cafeteria wait-time predictor.", "react, python, sql", "https://github.com/mockuser/campuseats"),
-    ("SecureVote", "Blockchain-based voting system for student council elections.", "blockchain, solidity, react", "https://github.com/mockuser/securevote"),
-    ("MindfulMe", "Mental wellness check-in app with sentiment analysis.", "python, machine-learning, mobile", "https://github.com/mockuser/mindfulme"),
-    ("BugHunters", "Crowdsourced bug bounty platform for student-built apps.", "cybersecurity, nodejs, react", "https://github.com/mockuser/bughunters"),
+    ("Nexus Graph", "A highly optimized, distributed graph database designed specifically for analyzing complex social media interaction networks in real-time.", "c++, rust, distributed-systems", "https://github.com/nexus-graph/nexus-core"),
+    ("Aura Vision", "An edge-compute computer vision system for drones that detects wildfires early by analyzing multispectral infrared camera feeds.", "python, pytorch, computer-vision, edge-computing", "https://github.com/aura-vision/wildfire-detect"),
+    ("FinStream", "A unified API gateway for decentralized finance (DeFi) protocols, providing developers a single interface to interact with multiple liquidity pools.", "solidity, typescript, graphql, web3", "https://github.com/finstream-labs/gateway"),
+    ("NeuroSync", "A brain-computer interface application that translates EEG signals into keystrokes for individuals with severe motor disabilities.", "python, signal-processing, bci, qt", "https://github.com/neurosync/eeg-keyboard"),
+    ("KubeScaler", "An intelligent auto-scaler for Kubernetes that uses predictive machine learning models to pre-scale pods before traffic spikes occur.", "go, kubernetes, machine-learning", "https://github.com/kubescaler/autoscaler"),
+    ("VitaChain", "A hyperledger-based supply chain tracking system for pharmaceutical drugs to prevent counterfeiting and ensure temperature compliance.", "hyperledger, go, react", "https://github.com/vitachain/pharma-track"),
+    ("OmniLearn", "An adaptive learning management system that generates custom syllabus and quizzes dynamically using large language models.", "nextjs, python, fastapi, llm", "https://github.com/omnilearn-edu/platform"),
+    ("AquaSense", "An IoT sensor network deployment that monitors water quality in urban rivers and alerts local authorities of hazardous chemical spikes.", "c, arduino, mqtt, react", "https://github.com/aquasense/sensor-mesh"),
+    ("QuantumSim", "A lightweight, browser-based quantum circuit simulator built with WebAssembly for educational purposes.", "rust, wasm, typescript, react", "https://github.com/quantumsim/web-simulator"),
+    ("CivicConnect", "A civic engagement platform that aggregates local municipal data and allows citizens to vote on neighborhood improvement proposals.", "ruby-on-rails, postgresql, vuejs", "https://github.com/civicconnect/platform"),
+    ("AtmoShield", "A real-time weather pattern anomaly detection API that provides early warnings for hyper-localized severe weather events.", "python, tensorflow, apache-kafka", "https://github.com/atmoshield/anomaly-api"),
+    ("PentaTest", "An automated web application vulnerability scanner that leverages fuzzing and AI-driven payload generation.", "python, cybersecurity, selenium", "https://github.com/pentatest/scanner")
 ]
 REVIEWER_PROFILES = [
-    ("Dr. Ananya Rao", "VIT University", "machine learning, python, data science, statistics"),
-    ("Prof. James Lee", "Stanford", "react, frontend, ui-ux, javascript"),
-    ("Dr. Wei Zhang", "MIT", "devops, cloud, aws, backend infrastructure"),
-    ("Prof. Fatima Noor", "IIT Bombay", "cybersecurity, infosec, network security"),
-    ("Dr. Carlos Mendes", "UC Berkeley", "blockchain, solidity, distributed systems"),
-    ("Prof. Sara Kim", "BITS Pilani", "mobile development, flutter, android, ios"),
-    ("Dr. Arjun Mehta", "VIT University", "backend, sql, java, system design"),
-    ("Prof. Linda Osei", "Stanford", "data science, machine learning, nlp"),
+    ("Dr. Alistair Vance", "Carnegie Mellon University", "machine learning, artificial intelligence, computer vision, robotics"),
+    ("Prof. Sarah Jenkins", "Massachusetts Institute of Technology (MIT)", "distributed systems, cloud computing, operating systems, go"),
+    ("Dr. Hector Ramirez", "Stanford University", "cybersecurity, cryptography, network security, blockchain"),
+    ("Prof. Aisha Malik", "University of Waterloo", "human-computer interaction, ui/ux, frontend development, accessibility"),
+    ("Dr. Kenji Sato", "University of Tokyo", "embedded systems, iot, hardware design, c++"),
+    ("Prof. Maria Rossi", "Politecnico di Milano", "data science, natural language processing, statistics, python"),
+    ("Dr. David Chen", "National University of Singapore", "software engineering, system architecture, backend development, java"),
+    ("Prof. Elena Kovac", "ETH Zurich", "quantum computing, theoretical computer science, algorithms")
 ]
 
 

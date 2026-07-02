@@ -35,6 +35,9 @@ class ParticipantRepository:
     def get_by_email(self, email: str) -> Optional[Participant]:
         return self.db.query(Participant).filter(Participant.email == email).first()
 
+    def get_by_phone(self, phone: str) -> Optional[Participant]:
+        return self.db.query(Participant).filter(Participant.phone == phone).first()
+
     def list_all(self, skip: int = 0, limit: int = 100) -> List[Participant]:
         return self.db.query(Participant).offset(skip).limit(limit).all()
 

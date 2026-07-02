@@ -199,6 +199,9 @@ export default function App() {
   const [resultsDeclared, setResultsDeclared] = useState<boolean>(false);
   const [showGlobalLeaderboard, setShowGlobalLeaderboard] = useState<boolean>(false);
   const [showVoiceModal, setShowVoiceModal] = useState<boolean>(false);
+  const [callMePhone, setCallMePhone] = useState<string>('');
+  const [isCalling, setIsCalling] = useState<boolean>(false);
+  const [callStatus, setCallStatus] = useState<string>('');
   const [backendWarning, setBackendWarning] = useState<string | null>(null);
   const [liveBiasFlags, setLiveBiasFlags] = useState<api.BackendBiasFlag[]>([]);
   const [projectFeedback, setProjectFeedback] = useState<Record<string, unknown> | null>(null);
@@ -3053,15 +3056,51 @@ export default function App() {
             </div>
             <div className="p-6 bg-slate-50 text-slate-800 text-sm">
               <p className="mb-4 text-slate-600">
-                You can talk to the <strong>HackBridge AI Agent</strong> to query events, register, or find teams.
+                You can talk to the <strong>HackBridge AI Agent</strong> to query events, register, or find teams. 
+                Enter your phone number below and the AI will call you immediately!
               </p>
               
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 text-center">
-                <span className="text-xs uppercase tracking-wider font-bold text-emerald-800 block mb-1">Demo Phone Number</span>
-                <a href="tel:+12674608316" className="text-2xl font-black text-emerald-700 hover:underline tracking-wide block">
-                  +1 (267) 460-8316
-                </a>
-                <span className="text-[10px] text-emerald-600 mt-1 block">Click to call (Twilio via Vapi AI)</span>
+                <span className="text-xs uppercase tracking-wider font-bold text-emerald-800 block mb-2">Receive an AI Call</span>
+                <input 
+                  type="tel"
+                  placeholder="e.g. +1234567890"
+                  value={callMePhone}
+                  onChange={(e) => setCallMePhone(e.target.value)}
+                  className="w-full max-w-[200px] text-center px-3 py-2 border border-emerald-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-3 font-mono"
+                />
+                <button
+                  disabled={!callMePhone || isCalling}
+                  onClick={async () => {
+                    setIsCalling(true);
+                    setCallStatus('Initiating call...');
+                    try {
+                      const res = await fetch(`${api.getBackendUrl()}/api/voice/outbound-call`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone_number: callMePhone })
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        setCallStatus('Calling you now! Please answer your phone.');
+                      } else {
+                        setCallStatus(`Error: ${data.detail || 'Failed to initiate call'}`);
+                      }
+                    } catch (err: any) {
+                      setCallStatus(`Error: ${err.message}`);
+                    } finally {
+                      setIsCalling(false);
+                    }
+                  }}
+                  className="block mx-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold uppercase text-xs tracking-wider disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {isCalling ? 'Connecting...' : 'Call Me Now'}
+                </button>
+                {callStatus && (
+                  <span className={`text-[11px] mt-3 block font-bold ${callStatus.includes('Error') ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {callStatus}
+                  </span>
+                )}
               </div>
 
               <div className="space-y-3">

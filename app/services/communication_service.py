@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
+import httpx
 from sqlalchemy.orm import Session
 from app.models.communication import Communication
+from app.models.participant import Participant
+from app.core.config import settings
 
 TEMPLATES = {
     "registration_confirmed": {
@@ -33,6 +36,16 @@ TEMPLATES = {
         "body": "A potential {bias_type} bias was detected for project '{project_title}'. Please review.",
         "channel": "email",
     },
+    "voice_participant_status": {
+        "subject": "Your Hackathon Status",
+        "body": "Hi {name}, here is your requested status update from the AI Assistant:<br><br>{status_text}",
+        "channel": "email",
+    },
+    "voice_team_intro": {
+        "subject": "HackBridge Matchmaking: Introduction",
+        "body": "Hi team, meet {name}! They are interested in joining your team '{team_name}'. {name}'s skills are: {skills}. <br><br>Please connect and see if it's a good match!",
+        "channel": "email",
+    },
 }
 
 
@@ -41,18 +54,46 @@ def send_notification(db: Session, participant_id: int, template_key: str, conte
     if not t:
         raise ValueError(f"Unknown template: {template_key}")
 
+    subject = t["subject"].format(**context)
+    body = t["body"].format(**context)
+
+    # Save to DB
     record = Communication(
         participant_id=participant_id,
         template_key=template_key,
         channel=t["channel"],
-        subject=t["subject"].format(**context),
-        body=t["body"].format(**context),
+        subject=subject,
+        body=body,
         status="sent",
         sent_at=datetime.now(timezone.utc),
     )
     db.add(record)
     db.commit()
     db.refresh(record)
+
+    # Send email
+    if t["channel"] == "email" and settings.resend_api_key:
+        participant = db.query(Participant).filter(Participant.id == participant_id).first()
+        if participant and participant.email:
+            try:
+                response = httpx.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+                    json={
+                        "from": "onboarding@resend.dev",
+                        "to": [participant.email],
+                        "subject": subject,
+                        "html": f"<p>{body}</p>",
+                    },
+                    timeout=10,
+                )
+                if response.status_code >= 400:
+                    print(f"[CommunicationService] Resend API Error ({response.status_code}): {response.text}")
+                else:
+                    print(f"[CommunicationService] Email sent successfully to {participant.email}")
+            except Exception as exc:
+                print(f"[CommunicationService] Email send exception: {exc}")
+
     return record
 
 
